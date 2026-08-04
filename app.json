@@ -8,7 +8,10 @@
     "scheme": "cadence",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "Cadence reads your health data to import workouts, heart rate, sleep, and activity for personalized training recommendations."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,11 +35,51 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      "expo-sqlite",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Cadence reads your health data to import workouts, heart rate, sleep, and activity for personalized training recommendations.",
+          "NSHealthUpdateUsageDescription": false
+        }
+      ],
+      [
+        "react-native-health-connect",
+        {
+          "permissions": [
+            "android.permission.health.READ_EXERCISE",
+            "android.permission.health.READ_HEART_RATE",
+            "android.permission.health.READ_RESTING_HEART_RATE",
+            "android.permission.health.READ_HEART_RATE_VARIABILITY",
+            "android.permission.health.READ_SLEEP",
+            "android.permission.health.READ_STEPS",
+            "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+            "android.permission.health.READ_VO2_MAX",
+            "android.permission.health.READ_DISTANCE"
+          ]
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Cadence needs background location access to continue recording your route when the app is in the background during a workout.",
+          "locationWhenInUsePermission": "Cadence uses your location to record your running and walking routes during workouts.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e8d584e8-d6f2-4a0c-ba8d-9ddeea27f2be"
+      }
+    },
+    "owner": "jonathdb"
   }
 }
