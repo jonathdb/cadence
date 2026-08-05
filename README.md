@@ -1,56 +1,135 @@
-# Welcome to your Expo app 👋
+# Cadence
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+AI-powered fitness training app. Chat with an AI agent to create personalized programs, log workouts, track PRs, and manage Spotify playlists for your sessions.
 
-## Get started
+## Stack
 
-1. Install dependencies
+- **Frontend:** React Native + Expo v57 (Expo Router, Dev Client)
+- **Backend:** Supabase (Postgres + RLS, Auth, Edge Functions, Realtime)
+- **AI:** OpenAI / Anthropic (BYOK - bring your own key)
+- **Health:** Apple HealthKit + Android Health Connect
+- **Music:** Spotify Web API (OAuth2 PKCE)
+- **GPS:** expo-location with background tracking (Phase 2)
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+**AI Agent**
+- Natural language program creation and modification
+- Tool calls with permission gating (approval required or auto-apply)
+- Streaming responses via SSE
+- Full audit log of all agent actions
 
-   ```bash
-   npx expo start
-   ```
+**Training Programs**
+- Structured programs with days, exercises, sets, reps, RPE targets
+- Timer configurations (rest, countdown, interval, duration)
+- Single active program constraint (DB-enforced)
+- Program library with activation/archival
 
-In the output, you'll find options to open the app in a
+**Session Logging**
+- Auto-fill from previous sessions (priority chain)
+- Real-time PR detection (weight, reps at weight, estimated 1RM)
+- Timer UI with background notifications
+- End-of-session summary with volume and PRs
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+**Progression**
+- Volume by muscle group with selectable time window
+- Per-exercise history
+- Activity summary (Cadence sessions only)
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+**Health Integration**
+- Import workouts, sleep, heart rate, activity from HealthKit/Health Connect
+- Cardio autofill from imported workouts
+- Recovery summaries for AI recommendations
 
-## Get a fresh project
+**Spotify**
+- OAuth2 PKCE connection
+- Playlist search, creation, and modification via AI agent
+- Pace-based playlist suggestions (BPM correlated to running pace)
 
-When you're ready, run:
+**Route Tracking (Phase 2)**
+- Background GPS recording via expo-location
+- Haversine distance, pace, speed, elevation gain
+- PostGIS storage with point stream
+- Route history queryable by the AI agent
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- Docker Desktop (for local Supabase)
+- Expo CLI (`npx expo`)
+
+### Setup
 
 ```bash
-npm run reset-project
+# Install dependencies
+npm install
+
+# Start local Supabase
+npx supabase start
+
+# Apply migrations and seed data
+npx supabase db reset
+
+# Start the app
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Press **w** for web, **i** for iOS simulator, **a** for Android emulator.
 
-### Other setup steps
+### Environment Variables
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Create a `.env` file:
 
-## Learn more
+```
+EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:55001
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+### Native Features
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+HealthKit, Health Connect, background GPS, and notifications require a Dev Client build:
 
-## Join the community
+```bash
+npx expo prebuild
+npx expo run:ios    # or run:android
+```
 
-Join our community of developers creating universal apps.
+## Project Structure
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/
+  app/              # Expo Router screens
+    (auth)/         # Login, register, verify-email
+    (tabs)/         # Main app (chat, program, session, progress, settings, journal)
+  components/       # Shared UI components
+  constants/        # Design system (theme, colors, spacing, radii)
+  hooks/            # useTheme, useColorScheme
+  providers/        # AuthProvider
+  services/         # Business logic (PR detection, auto-fill, timer, etc.)
+  types/            # TypeScript interfaces
+  utils/            # Supabase client
+
+supabase/
+  functions/        # Edge Functions (agent-chat, store-api-key, delete-account)
+  migrations/       # Database schema
+  seed.sql          # Global exercise library
+
+tests/
+  unit/             # 306 unit tests (vitest)
+```
+
+## Testing
+
+```bash
+npx vitest --run
+```
+
+## Design System
+
+Dark-first with teal/cyan accent. System fonts. Consistent spacing (4px grid), radii, and semantic color tokens. See `src/constants/theme.ts`.
+
+## License
+
+MIT
