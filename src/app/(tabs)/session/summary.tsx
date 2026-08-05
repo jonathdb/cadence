@@ -12,7 +12,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { calculateSessionVolume } from '@/services/volume-calculator';
 import type { LoggedSet, PRType } from '@/types/session';
 import { supabase } from '@/utils/supabase';
@@ -76,6 +77,7 @@ function formatVolume(volume: number): string {
 export default function SessionSummaryScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const router = useRouter();
+  const theme = useTheme();
   const [summaryData, setSummaryData] = useState<SessionSummaryData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -195,8 +197,8 @@ export default function SessionSummaryScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
-        <ThemedText type="small" themeColor="textSecondary">
+        <ActivityIndicator size="large" color={theme.accent} />
+        <ThemedText type="bodyMedium" themeColor="textSecondary">
           Loading summary…
         </ThemedText>
       </ThemedView>
@@ -206,14 +208,14 @@ export default function SessionSummaryScreen() {
   if (error || !summaryData) {
     return (
       <ThemedView style={styles.centered}>
-        <ThemedText type="subtitle" style={styles.title}>
+        <ThemedText type="headlineMedium" style={styles.title}>
           Summary
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="bodyMedium" themeColor="textSecondary">
           {error || 'No data available.'}
         </ThemedText>
-        <Pressable style={styles.doneButton} onPress={handleDone} accessibilityRole="button">
-          <ThemedText style={styles.doneButtonText}>Back to Sessions</ThemedText>
+        <Pressable style={[styles.doneButton, { borderColor: theme.border }]} onPress={handleDone} accessibilityRole="button">
+          <ThemedText style={[styles.doneButtonText, { color: theme.text }]}>Back to Sessions</ThemedText>
         </Pressable>
       </ThemedView>
     );
@@ -227,53 +229,53 @@ export default function SessionSummaryScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
-          <ThemedText type="subtitle" style={styles.title}>
+          <ThemedText type="headlineMedium" style={styles.title}>
             Session Complete 🎉
           </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="bodyMedium" themeColor="textSecondary">
             Here's how your workout went.
           </ThemedText>
         </View>
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <ThemedText type="small" themeColor="textSecondary">
+          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="bodySmall" themeColor="textSecondary">
               Duration
             </ThemedText>
-            <ThemedText style={styles.statValue}>
+            <ThemedText type="monoMedium">
               {formatDuration(totalDurationSeconds)}
             </ThemedText>
           </View>
 
-          <View style={styles.statCard}>
-            <ThemedText type="small" themeColor="textSecondary">
+          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="bodySmall" themeColor="textSecondary">
               Total Sets
             </ThemedText>
-            <ThemedText style={styles.statValue}>{totalSets}</ThemedText>
+            <ThemedText type="monoMedium">{totalSets}</ThemedText>
           </View>
 
-          <View style={styles.statCard}>
-            <ThemedText type="small" themeColor="textSecondary">
+          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="bodySmall" themeColor="textSecondary">
               Est. Volume
             </ThemedText>
-            <ThemedText style={styles.statValue}>{formatVolume(totalVolume)}</ThemedText>
+            <ThemedText type="monoMedium">{formatVolume(totalVolume)}</ThemedText>
           </View>
         </View>
 
         {/* PRs Section — hidden when no PRs achieved (Requirement 11.2) */}
         {hasPRs && (
           <View style={styles.prSection}>
-            <ThemedText style={styles.sectionTitle}>🏆 Personal Records</ThemedText>
+            <ThemedText type="headlineSmall">🏆 Personal Records</ThemedText>
             {prs.map((pr, index) => (
-              <View key={`${pr.exerciseName}-${pr.prType}-${index}`} style={styles.prRow}>
+              <View key={`${pr.exerciseName}-${pr.prType}-${index}`} style={[styles.prRow, { borderBottomColor: theme.border }]}>
                 <View style={styles.prInfo}>
-                  <ThemedText style={styles.prExercise}>{pr.exerciseName}</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
+                  <ThemedText style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{pr.exerciseName}</ThemedText>
+                  <ThemedText type="bodySmall" themeColor="textSecondary">
                     {formatPRType(pr.prType)}
                   </ThemedText>
                 </View>
-                <ThemedText style={styles.prValue}>
+                <ThemedText style={{ fontSize: 15, fontWeight: '700', color: theme.prText }}>
                   {pr.prType === 'reps_at_weight' ? `${pr.value} reps` : `${pr.value} kg`}
                 </ThemedText>
               </View>
@@ -283,12 +285,12 @@ export default function SessionSummaryScreen() {
 
         {/* Journal Entry CTA (Requirement 22.1) */}
         <View style={styles.journalSection}>
-          <ThemedText style={styles.sectionTitle}>Reflect on your session</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.journalDescription}>
+          <ThemedText type="headlineSmall">Reflect on your session</ThemedText>
+          <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.journalDescription}>
             Create a journal entry to capture your thoughts, how you felt, and what to improve.
           </ThemedText>
           <Pressable
-            style={styles.journalButton}
+            style={[styles.journalButton, { backgroundColor: theme.accent }]}
             onPress={handleCreateJournal}
             accessibilityRole="button"
             accessibilityLabel="Create journal entry for this session"
@@ -299,12 +301,12 @@ export default function SessionSummaryScreen() {
 
         {/* Done Button */}
         <Pressable
-          style={styles.doneButton}
+          style={[styles.doneButton, { borderColor: theme.border }]}
           onPress={handleDone}
           accessibilityRole="button"
           accessibilityLabel="Return to session list"
         >
-          <ThemedText style={styles.doneButtonText}>Done</ThemedText>
+          <ThemedText style={[styles.doneButtonText, { color: theme.text }]}>Done</ThemedText>
         </Pressable>
       </ScrollView>
     </ThemedView>
@@ -332,31 +334,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing.three,
   },
-  title: {
-    fontSize: 22,
-  },
+  title: {},
   statsGrid: {
     flexDirection: 'row',
     gap: Spacing.two,
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
     alignItems: 'center',
     gap: Spacing.one,
   },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
   prSection: {
     gap: Spacing.two,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
   },
   prRow: {
     flexDirection: 'row',
@@ -364,20 +355,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
   },
   prInfo: {
     flex: 1,
     gap: 2,
-  },
-  prExercise: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  prValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#3c87f7',
   },
   journalSection: {
     gap: Spacing.two,
@@ -387,10 +368,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   journalButton: {
-    backgroundColor: '#3c87f7',
-    borderRadius: 10,
+    borderRadius: Radii.medium,
     paddingVertical: 14,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   journalButtonText: {
     color: '#ffffff',
@@ -399,10 +381,11 @@ const styles = StyleSheet.create({
   },
   doneButton: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
+    borderRadius: Radii.medium,
     paddingVertical: 14,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   doneButtonText: {
     fontSize: 16,

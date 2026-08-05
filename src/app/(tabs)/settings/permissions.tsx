@@ -12,7 +12,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, Switch, View } from 'react-n
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     ALL_PERMISSION_CATEGORIES,
@@ -43,6 +44,7 @@ const CATEGORY_INFO: Record<PermissionCategory, { label: string; description: st
 
 export default function PermissionsScreen() {
   const { session } = useAuth();
+  const theme = useTheme();
   const [permissions, setPermissions] = useState<Record<PermissionCategory, PermissionMode> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [updatingCategory, setUpdatingCategory] = useState<PermissionCategory | null>(null);
@@ -104,8 +106,8 @@ export default function PermissionsScreen() {
         </View>
 
         {error && (
-          <View style={styles.errorContainer}>
-            <ThemedText style={styles.errorText}>{error}</ThemedText>
+          <View style={[styles.errorContainer, { backgroundColor: theme.errorSoft }]}>
+            <ThemedText style={{ fontSize: 14, color: theme.error, textAlign: 'center' }}>{error}</ThemedText>
           </View>
         )}
 
@@ -117,13 +119,13 @@ export default function PermissionsScreen() {
             const isUpdating = updatingCategory === category;
 
             return (
-              <View key={category} style={styles.permissionRow}>
+              <View key={category} style={[styles.permissionRow, { backgroundColor: theme.backgroundElement }]}>
                 <View style={styles.permissionInfo}>
                   <ThemedText style={styles.permissionLabel}>{info.label}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {info.description}
                   </ThemedText>
-                  <ThemedText type="small" style={isAutoApply ? styles.modeAutoApply : styles.modeApproval}>
+                  <ThemedText type="small" style={{ color: isAutoApply ? theme.accent : theme.textSecondary, fontWeight: '600' }}>
                     {isAutoApply ? 'Auto Apply' : 'Approval Required'}
                   </ThemedText>
                 </View>
@@ -134,7 +136,7 @@ export default function PermissionsScreen() {
                     <Switch
                       value={isAutoApply}
                       onValueChange={() => handleToggle(category, mode)}
-                      trackColor={{ false: '#ccc', true: '#3c87f7' }}
+                      trackColor={{ false: theme.border, true: theme.accent }}
                       accessibilityLabel={`Toggle ${info.label} to ${isAutoApply ? 'approval required' : 'auto apply'}`}
                     />
                   )}
@@ -165,21 +167,14 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
     padding: Spacing.two,
-    borderRadius: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#dc2626',
-    textAlign: 'center',
+    borderRadius: Radii.medium,
   },
   permissionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.three,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: Radii.medium,
   },
   permissionInfo: {
     flex: 1,
@@ -191,13 +186,5 @@ const styles = StyleSheet.create({
   },
   toggleContainer: {
     marginLeft: Spacing.two,
-  },
-  modeAutoApply: {
-    color: '#3c87f7',
-    fontWeight: '600',
-  },
-  modeApproval: {
-    color: '#6b7280',
-    fontWeight: '500',
   },
 });

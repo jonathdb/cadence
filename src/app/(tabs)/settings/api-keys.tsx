@@ -19,7 +19,8 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/utils/supabase';
 
@@ -32,6 +33,7 @@ interface KeyStatus {
 
 export default function ApiKeysScreen() {
   const { session } = useAuth();
+  const theme = useTheme();
   const [openaiKey, setOpenaiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -45,18 +47,18 @@ export default function ApiKeysScreen() {
     try {
       const { data, error } = await supabase
         .from('user_api_keys')
-        .select('openai_key_encrypted, anthropic_key_encrypted')
-        .eq('user_id', session.user.id)
-        .maybeSingle();
+        .select('provider')
+        .eq('user_id', session.user.id);
 
       if (error) {
         console.warn('Failed to load key status:', error.message);
         return;
       }
 
+      const providers = (data ?? []).map((row) => row.provider);
       setKeyStatus({
-        openai: !!data?.openai_key_encrypted,
-        anthropic: !!data?.anthropic_key_encrypted,
+        openai: providers.includes('openai'),
+        anthropic: providers.includes('anthropic'),
       });
     } finally {
       setIsLoadingStatus(false);
@@ -78,16 +80,32 @@ export default function ApiKeysScreen() {
     setSaveStatus(null);
 
     try {
-      const { error } = await supabase.functions.invoke('store-api-key', {
-        body: { provider, key: key.trim() },
-      });
+      // Get current session to ensure we have a valid token
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        setSaveStatus('Error: Not authenticated. Please sign in again.');
+        setIsSaving(false);
+        return;
+      }
 
-      if (error) {
-        setSaveStatus(`Error: ${error.message}`);
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/store-api-key`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${currentSession.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ provider, key: key.trim() }),
+        }
+      );
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        setSaveStatus(`Error: ${errData?.error?.message || response.statusText}`);
       } else {
         const label = provider === 'openai' ? 'OpenAI' : 'Anthropic';
         setSaveStatus(`${label} key saved successfully`);
-        // Clear the input after successful save (key is stored server-side, never shown again)
         if (provider === 'openai') {
           setOpenaiKey('');
           setKeyStatus((prev) => ({ ...prev, openai: true }));
@@ -114,8 +132,8 @@ export default function ApiKeysScreen() {
         </View>
 
         {saveStatus && (
-          <View style={[styles.statusContainer, saveStatus.startsWith('Error') && styles.statusError]}>
-            <ThemedText style={styles.statusText}>{saveStatus}</ThemedText>
+          <View style={[styles.statusContainer, { backgroundColor: saveStatus.startsWith('Error') ? theme.errorSoft : theme.successSoft }]}>
+            <ThemedText style={{ fontSize: 14, textAlign: 'center', color: saveStatus.startsWith('Error') ? theme.error : theme.success }}>{saveStatus}</ThemedText>
           </View>
         )}
 
@@ -131,9 +149,9 @@ export default function ApiKeysScreen() {
             </View>
           ) : null}
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
             placeholder={keyStatus.openai ? 'Enter new key to replace...' : 'sk-...'}
-            placeholderTextColor="#888"
+            placeholderTextColor={theme.textTertiary}
             value={openaiKey}
             onChangeText={setOpenaiKey}
             autoCapitalize="none"
@@ -143,7 +161,7 @@ export default function ApiKeysScreen() {
             accessibilityLabel="OpenAI API key input"
           />
           <Pressable
-            style={[styles.button, isSaving && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: theme.accent }, isSaving && styles.buttonDisabled]}
             onPress={() => handleSaveKey('openai')}
             disabled={isSaving}
             accessibilityRole="button"
@@ -171,9 +189,9 @@ export default function ApiKeysScreen() {
             </View>
           ) : null}
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
             placeholder={keyStatus.anthropic ? 'Enter new key to replace...' : 'sk-ant-...'}
-            placeholderTextColor="#888"
+            placeholderTextColor={theme.textTertiary}
             value={anthropicKey}
             onChangeText={setAnthropicKey}
             autoCapitalize="none"
@@ -183,7 +201,7 @@ export default function ApiKeysScreen() {
             accessibilityLabel="Anthropic API key input"
           />
           <Pressable
-            style={[styles.button, isSaving && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: theme.accent }, isSaving && styles.buttonDisabled]}
             onPress={() => handleSaveKey('anthropic')}
             disabled={isSaving}
             accessibilityRole="button"
@@ -229,23 +247,21 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   configuredBadge: {
-    color: '#16a34a',
     fontWeight: '600',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.three,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
+    minHeight: 48,
   },
   button: {
-    backgroundColor: '#3c87f7',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two + 4,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -256,15 +272,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statusContainer: {
-    backgroundColor: '#dcfce7',
     padding: Spacing.two,
-    borderRadius: 8,
-  },
-  statusError: {
-    backgroundColor: '#fee2e2',
-  },
-  statusText: {
-    fontSize: 14,
-    textAlign: 'center',
+    borderRadius: Radii.medium,
   },
 });

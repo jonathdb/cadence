@@ -22,12 +22,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const router = useRouter();
+  const theme = useTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -62,23 +64,27 @@ export default function LoginScreen() {
           style={styles.keyboardView}
         >
           <View style={styles.content}>
-            <ThemedText type="title" style={styles.title}>
+            <ThemedText type="displayMedium" style={styles.title}>
               Cadence
             </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
+            <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.subtitle}>
               Sign in to continue
             </ThemedText>
 
             {error && (
-              <View style={styles.errorContainer} accessibilityRole="alert">
-                <ThemedText style={styles.errorText}>{error}</ThemedText>
+              <View style={[styles.errorContainer, { backgroundColor: theme.errorSoft }]} accessibilityRole="alert">
+                <ThemedText style={{ color: theme.error, fontSize: 14, textAlign: 'center' }}>{error}</ThemedText>
               </View>
             )}
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, {
+                backgroundColor: theme.backgroundElement,
+                borderColor: theme.border,
+                color: theme.text,
+              }]}
               placeholder="Email"
-              placeholderTextColor="#888"
+              placeholderTextColor={theme.textTertiary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -91,9 +97,13 @@ export default function LoginScreen() {
             />
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, {
+                backgroundColor: theme.backgroundElement,
+                borderColor: theme.border,
+                color: theme.text,
+              }]}
               placeholder="Password"
-              placeholderTextColor="#888"
+              placeholderTextColor={theme.textTertiary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -104,7 +114,7 @@ export default function LoginScreen() {
             />
 
             <Pressable
-              style={[styles.button, isLoading && styles.buttonDisabled]}
+              style={[styles.button, { backgroundColor: theme.accent }, isLoading && styles.buttonDisabled]}
               onPress={handleSignIn}
               disabled={isLoading}
               accessibilityRole="button"
@@ -152,37 +162,29 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    fontSize: 36,
   },
   subtitle: {
     textAlign: 'center',
     marginBottom: Spacing.three,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
-    padding: Spacing.two,
-    borderRadius: 8,
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 14,
-    textAlign: 'center',
+    padding: Spacing.twoHalf,
+    borderRadius: Radii.medium,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.three,
     fontSize: 16,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
+    minHeight: 48,
   },
   button: {
-    backgroundColor: '#3c87f7',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.three,
     alignItems: 'center',
     marginTop: Spacing.two,
+    minHeight: 48,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,

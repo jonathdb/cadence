@@ -1,28 +1,31 @@
 /**
  * Authenticated tabs layout.
- * Shows bottom tab navigation for: Chat, Program, Session, Progress, Settings.
- * This is the main app shell after authentication.
- *
- * Requirements: 27.1
+ * Bottom tab navigation: Chat, Program, Session, Progress, Settings.
+ * Uses the Cadence dark-first design system.
  */
 import { Tabs } from 'expo-router';
-import { useColorScheme } from 'react-native';
 
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function TabsLayout() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const theme = useTheme();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: true,
-        tabBarActiveTintColor: '#3c87f7',
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: { backgroundColor: colors.background },
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
+        tabBarActiveTintColor: theme.tabBarActive,
+        tabBarInactiveTintColor: theme.tabBarInactive,
+        tabBarStyle: {
+          backgroundColor: theme.tabBarBackground,
+          borderTopColor: theme.tabBarBorder,
+          borderTopWidth: 1,
+        },
+        headerStyle: {
+          backgroundColor: theme.background,
+        },
+        headerTintColor: theme.text,
+        headerShadowVisible: false,
       }}
     >
       <Tabs.Screen
@@ -64,7 +67,7 @@ export default function TabsLayout() {
         name="journal"
         options={{
           title: 'Journal',
-          href: null, // Hidden from tab bar — accessible from Progress screen
+          href: null,
         }}
       />
     </Tabs>

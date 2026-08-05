@@ -9,7 +9,8 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 interface ToolCallData {
   id: string;
@@ -26,6 +27,7 @@ interface ProgramProposalProps {
 
 export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramProposalProps) {
   const [isExecuting, setIsExecuting] = useState(false);
+  const theme = useTheme();
 
   const parsedArgs = useMemo(() => {
     try {
@@ -54,8 +56,8 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
   // Already resolved
   if (toolCall.status === 'approved' || toolCall.status === 'auto_applied') {
     return (
-      <View style={[styles.container, styles.approvedContainer]}>
-        <ThemedText style={styles.statusText}>
+      <View style={[styles.container, { borderColor: theme.success, backgroundColor: theme.successSoft }]}>
+        <ThemedText style={{ fontSize: 14, fontWeight: '500', color: theme.success }}>
           ✅ {toolDisplayName} — Applied
         </ThemedText>
       </View>
@@ -64,8 +66,8 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
 
   if (toolCall.status === 'rejected') {
     return (
-      <View style={[styles.container, styles.rejectedContainer]}>
-        <ThemedText style={styles.statusText}>
+      <View style={[styles.container, { borderColor: theme.error, backgroundColor: theme.errorSoft }]}>
+        <ThemedText style={{ fontSize: 14, fontWeight: '500', color: theme.error }}>
           ❌ {toolDisplayName} — Rejected
         </ThemedText>
       </View>
@@ -74,24 +76,24 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
 
   // Pending approval - show details
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}>
       <View style={styles.header}>
-        <ThemedText style={styles.toolName}>🔧 {toolDisplayName}</ThemedText>
+        <ThemedText style={{ fontWeight: '700', fontSize: 14, color: theme.text }}>🔧 {toolDisplayName}</ThemedText>
       </View>
 
       {/* Program creation details */}
       {toolCall.name === 'program_create' && parsedArgs && (
         <View style={styles.programDetails}>
-          <ThemedText style={styles.programName}>
+          <ThemedText style={{ fontWeight: '600', fontSize: 15, color: theme.text, marginBottom: 4 }}>
             {parsedArgs.name || 'Untitled Program'}
           </ThemedText>
           {parsedArgs.days?.map((day: any, idx: number) => (
             <View key={idx} style={styles.dayContainer}>
-              <ThemedText style={styles.dayTitle}>
+              <ThemedText style={{ fontWeight: '600', fontSize: 13, color: theme.textSecondary, marginBottom: 2 }}>
                 Day {day.day_number}: {day.name}
               </ThemedText>
               {day.items?.map((item: any, itemIdx: number) => (
-                <ThemedText key={itemIdx} style={styles.exerciseItem}>
+                <ThemedText key={itemIdx} style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
                   • {item.exercise_name} — {item.target_sets}×{item.target_reps}
                   {item.target_weight ? ` @ ${item.target_weight}kg` : ''}
                   {item.target_rpe ? ` RPE ${item.target_rpe}` : ''}
@@ -105,11 +107,11 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
       {/* Program modify details */}
       {toolCall.name === 'program_modify' && parsedArgs && (
         <View style={styles.programDetails}>
-          <ThemedText style={styles.programName}>
+          <ThemedText style={{ fontWeight: '600', fontSize: 15, color: theme.text, marginBottom: 4 }}>
             Reason: {parsedArgs.reason || 'No reason provided'}
           </ThemedText>
           {parsedArgs.changes?.map((change: any, idx: number) => (
-            <ThemedText key={idx} style={styles.exerciseItem}>
+            <ThemedText key={idx} style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
               • {change.action}: {change.exercise_name || `Day ${change.day_number}`}
             </ThemedText>
           ))}
@@ -119,7 +121,7 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
       {/* Generic tool call */}
       {!['program_create', 'program_modify'].includes(toolCall.name) && parsedArgs && (
         <View style={styles.programDetails}>
-          <ThemedText style={styles.exerciseItem} numberOfLines={5}>
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }} numberOfLines={5}>
             {JSON.stringify(parsedArgs, null, 2)}
           </ThemedText>
         </View>
@@ -128,7 +130,7 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
       {/* Approve/Reject buttons */}
       <View style={styles.buttonRow}>
         <Pressable
-          style={[styles.approveButton, isExecuting && styles.buttonDisabled]}
+          style={[styles.approveButton, { backgroundColor: theme.success }, isExecuting && styles.buttonDisabled]}
           onPress={handleApprove}
           disabled={isExecuting}
         >
@@ -137,7 +139,7 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
           </ThemedText>
         </Pressable>
         <Pressable
-          style={[styles.rejectButton, isExecuting && styles.buttonDisabled]}
+          style={[styles.rejectButton, { backgroundColor: theme.error }, isExecuting && styles.buttonDisabled]}
           onPress={onReject}
           disabled={isExecuting}
         >
@@ -152,55 +154,19 @@ const styles = StyleSheet.create({
   container: {
     marginTop: Spacing.two,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 10,
+    borderRadius: Radii.medium,
     padding: Spacing.three,
-    backgroundColor: '#fafafa',
-  },
-  approvedContainer: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#86efac',
-  },
-  rejectedContainer: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fca5a5',
   },
   header: {
     marginBottom: Spacing.two,
-  },
-  toolName: {
-    fontWeight: '700',
-    fontSize: 14,
-    color: '#374151',
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   programDetails: {
     marginBottom: Spacing.two,
     gap: 4,
   },
-  programName: {
-    fontWeight: '600',
-    fontSize: 15,
-    color: '#1f2937',
-    marginBottom: 4,
-  },
   dayContainer: {
     marginTop: 6,
     paddingLeft: Spacing.two,
-  },
-  dayTitle: {
-    fontWeight: '600',
-    fontSize: 13,
-    color: '#4b5563',
-    marginBottom: 2,
-  },
-  exerciseItem: {
-    fontSize: 13,
-    color: '#6b7280',
-    lineHeight: 18,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -209,17 +175,19 @@ const styles = StyleSheet.create({
   },
   approveButton: {
     flex: 1,
-    backgroundColor: '#16a34a',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   rejectButton: {
     flex: 1,
-    backgroundColor: '#dc2626',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.5,

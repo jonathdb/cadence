@@ -10,7 +10,8 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     getRouteTrackingStatus,
@@ -75,6 +76,7 @@ function formatSpeed(kmh: number): string {
 export default function RouteTrackingScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
+  const theme = useTheme();
 
   const [phase, setPhase] = useState<TrackingPhase>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -197,21 +199,21 @@ export default function RouteTrackingScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
-          <ThemedText type="subtitle" style={styles.title}>
+          <ThemedText type="headlineMedium" style={styles.title}>
             Track Route
           </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.description}>
+          <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.description}>
             Record your running or walking route with GPS tracking.
           </ThemedText>
 
           {error && (
-            <View style={styles.errorContainer}>
-              <ThemedText style={styles.errorText}>{error}</ThemedText>
+            <View style={[styles.errorContainer, { backgroundColor: theme.errorSoft }]}>
+              <ThemedText style={{ color: theme.error, fontSize: 14, textAlign: 'center' }}>{error}</ThemedText>
             </View>
           )}
 
           <Pressable
-            style={styles.startButton}
+            style={[styles.startButton, { backgroundColor: theme.success }]}
             onPress={handleStart}
             accessibilityRole="button"
             accessibilityLabel="Start route tracking"
@@ -229,36 +231,36 @@ export default function RouteTrackingScreen() {
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
           <View style={styles.trackingIndicator}>
-            <View style={styles.trackingDot} />
-            <ThemedText style={styles.trackingLabel}>Recording</ThemedText>
+            <View style={[styles.trackingDot, { backgroundColor: theme.success }]} />
+            <ThemedText style={[styles.trackingLabel, { color: theme.success }]}>Recording</ThemedText>
           </View>
 
-          <ThemedText style={styles.timer}>{formatDuration(elapsedSeconds)}</ThemedText>
+          <ThemedText type="monoLarge" style={{ color: theme.text }}>{formatDuration(elapsedSeconds)}</ThemedText>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="bodySmall" themeColor="textSecondary">
                 Distance
               </ThemedText>
-              <ThemedText style={styles.statValue}>{formatDistance(currentDistance)}</ThemedText>
+              <ThemedText type="monoMedium">{formatDistance(currentDistance)}</ThemedText>
             </View>
 
             <View style={styles.statItem}>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="bodySmall" themeColor="textSecondary">
                 Points
               </ThemedText>
-              <ThemedText style={styles.statValue}>{pointCount}</ThemedText>
+              <ThemedText type="monoMedium">{pointCount}</ThemedText>
             </View>
           </View>
 
           {error && (
-            <View style={styles.errorContainer}>
-              <ThemedText style={styles.errorText}>{error}</ThemedText>
+            <View style={[styles.errorContainer, { backgroundColor: theme.errorSoft }]}>
+              <ThemedText style={{ color: theme.error, fontSize: 14, textAlign: 'center' }}>{error}</ThemedText>
             </View>
           )}
 
           <Pressable
-            style={styles.stopButton}
+            style={[styles.stopButton, { backgroundColor: theme.error }]}
             onPress={handleStop}
             accessibilityRole="button"
             accessibilityLabel="Stop route tracking"
@@ -275,58 +277,58 @@ export default function RouteTrackingScreen() {
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <ThemedText type="subtitle" style={styles.title}>
+          <ThemedText type="headlineMedium" style={styles.title}>
             Route Complete 🏃
           </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="bodyMedium" themeColor="textSecondary">
             Here's your route summary.
           </ThemedText>
         </View>
 
         {summary && (
           <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <ThemedText type="small" themeColor="textSecondary">
+            <View style={[styles.summaryCard, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="bodySmall" themeColor="textSecondary">
                 Distance
               </ThemedText>
-              <ThemedText style={styles.summaryValue}>
+              <ThemedText type="monoMedium">
                 {formatDistance(summary.distanceMeters)}
               </ThemedText>
             </View>
 
-            <View style={styles.summaryCard}>
-              <ThemedText type="small" themeColor="textSecondary">
+            <View style={[styles.summaryCard, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="bodySmall" themeColor="textSecondary">
                 Duration
               </ThemedText>
-              <ThemedText style={styles.summaryValue}>
+              <ThemedText type="monoMedium">
                 {formatDuration(summary.durationSeconds)}
               </ThemedText>
             </View>
 
-            <View style={styles.summaryCard}>
-              <ThemedText type="small" themeColor="textSecondary">
+            <View style={[styles.summaryCard, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="bodySmall" themeColor="textSecondary">
                 Avg Pace
               </ThemedText>
-              <ThemedText style={styles.summaryValue}>
+              <ThemedText type="monoMedium">
                 {formatPace(summary.avgPaceSecondsPerKm)}
               </ThemedText>
             </View>
 
-            <View style={styles.summaryCard}>
-              <ThemedText type="small" themeColor="textSecondary">
+            <View style={[styles.summaryCard, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="bodySmall" themeColor="textSecondary">
                 Avg Speed
               </ThemedText>
-              <ThemedText style={styles.summaryValue}>
+              <ThemedText type="monoMedium">
                 {formatSpeed(summary.avgSpeedKmh)}
               </ThemedText>
             </View>
 
             {summary.elevationGainMeters != null && (
-              <View style={styles.summaryCard}>
-                <ThemedText type="small" themeColor="textSecondary">
+              <View style={[styles.summaryCard, { backgroundColor: theme.backgroundElement }]}>
+                <ThemedText type="bodySmall" themeColor="textSecondary">
                   Elevation Gain
                 </ThemedText>
-                <ThemedText style={styles.summaryValue}>
+                <ThemedText type="monoMedium">
                   {Math.round(summary.elevationGainMeters)} m
                 </ThemedText>
               </View>
@@ -335,12 +337,12 @@ export default function RouteTrackingScreen() {
         )}
 
         <Pressable
-          style={styles.doneButton}
+          style={[styles.doneButton, { borderColor: theme.border }]}
           onPress={handleReset}
           accessibilityRole="button"
           accessibilityLabel="Start a new route"
         >
-          <ThemedText style={styles.doneButtonText}>Track Another Route</ThemedText>
+          <ThemedText style={[styles.doneButtonText, { color: theme.text }]}>Track Another Route</ThemedText>
         </Pressable>
       </ScrollView>
     </ThemedView>
@@ -368,23 +370,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing.three,
   },
-  title: {
-    fontSize: 22,
-  },
+  title: {},
   description: {
     textAlign: 'center',
     lineHeight: 20,
   },
   errorContainer: {
-    backgroundColor: '#fef2f2',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 14,
-    textAlign: 'center',
   },
   // Tracking indicator
   trackingIndicator: {
@@ -396,18 +390,10 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#22c55e',
   },
   trackingLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#22c55e',
-  },
-  // Timer display
-  timer: {
-    fontSize: 48,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
   // Live stats
   statsRow: {
@@ -418,18 +404,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one,
   },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
   // Buttons
   startButton: {
-    backgroundColor: '#22c55e',
-    borderRadius: 10,
+    borderRadius: Radii.medium,
     paddingVertical: 16,
     paddingHorizontal: Spacing.five,
     width: '100%',
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   startButtonText: {
     color: '#ffffff',
@@ -437,12 +420,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   stopButton: {
-    backgroundColor: '#ef4444',
-    borderRadius: 10,
+    borderRadius: Radii.medium,
     paddingVertical: 16,
     paddingHorizontal: Spacing.five,
     width: '100%',
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   stopButtonText: {
     color: '#ffffff',
@@ -451,10 +435,11 @@ const styles = StyleSheet.create({
   },
   doneButton: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
+    borderRadius: Radii.medium,
     paddingVertical: 14,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   doneButtonText: {
     fontSize: 16,
@@ -469,14 +454,9 @@ const styles = StyleSheet.create({
   summaryCard: {
     flexBasis: '47%',
     flexGrow: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
     alignItems: 'center',
     gap: Spacing.one,
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: '700',
   },
 });

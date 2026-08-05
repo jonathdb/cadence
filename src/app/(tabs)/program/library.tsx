@@ -19,7 +19,8 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/utils/supabase';
 
@@ -32,12 +33,6 @@ interface ProgramListItem {
   program_days: { id: string }[];
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: '#16a34a',
-  archived: '#6b7280',
-  draft: '#d97706',
-};
-
 const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
   archived: 'Archived',
@@ -47,10 +42,19 @@ const STATUS_LABELS: Record<string, string> = {
 export default function ProgramLibraryScreen() {
   const { session } = useAuth();
   const router = useRouter();
+  const theme = useTheme();
   const [programs, setPrograms] = useState<ProgramListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activating, setActivating] = useState<string | null>(null);
+
+  function getStatusColor(status: string) {
+    switch (status) {
+      case 'active': return theme.success;
+      case 'draft': return theme.warning;
+      default: return theme.textSecondary;
+    }
+  }
 
   const fetchPrograms = useCallback(async () => {
     if (!session) return;
@@ -121,7 +125,6 @@ export default function ProgramLibraryScreen() {
                   return;
                 }
 
-                // Refresh the list to show updated statuses
                 await fetchPrograms();
               } catch (err) {
                 Alert.alert(
@@ -142,7 +145,7 @@ export default function ProgramLibraryScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedView>
     );
   }
@@ -150,10 +153,10 @@ export default function ProgramLibraryScreen() {
   if (programs.length === 0) {
     return (
       <ThemedView style={styles.centered}>
-        <ThemedText type="subtitle" style={styles.emptyTitle}>
+        <ThemedText type="headlineMedium" style={styles.emptyTitle}>
           No Programs
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+        <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.emptyText}>
           Chat with the agent to create your first training program.
         </ThemedText>
       </ThemedView>
@@ -167,13 +170,13 @@ export default function ProgramLibraryScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {programs.map((program) => (
-          <View key={program.id} style={styles.programCard}>
+          <View key={program.id} style={[styles.programCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}>
             <View style={styles.cardHeader}>
-              <ThemedText style={styles.programName}>{program.name}</ThemedText>
+              <ThemedText style={[styles.programName, { color: theme.text }]}>{program.name}</ThemedText>
               <View
                 style={[
                   styles.statusBadge,
-                  { backgroundColor: STATUS_COLORS[program.status] || '#6b7280' },
+                  { backgroundColor: getStatusColor(program.status) },
                 ]}
               >
                 <ThemedText style={styles.statusText}>
@@ -182,7 +185,7 @@ export default function ProgramLibraryScreen() {
               </View>
             </View>
 
-            <ThemedText style={styles.meta}>
+            <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
               {program.program_days.length} day
               {program.program_days.length !== 1 ? 's' : ''} •{' '}
               {new Date(program.created_at).toLocaleDateString()}
@@ -191,7 +194,7 @@ export default function ProgramLibraryScreen() {
             <View style={styles.actions}>
               {program.status !== 'active' && (
                 <Pressable
-                  style={styles.activateButton}
+                  style={[styles.activateButton, { backgroundColor: theme.accent }]}
                   onPress={() => handleActivateProgram(program)}
                   disabled={activating === program.id}
                   accessibilityRole="button"
@@ -206,12 +209,12 @@ export default function ProgramLibraryScreen() {
               )}
 
               <Pressable
-                style={styles.viewButton}
+                style={[styles.viewButton, { backgroundColor: theme.backgroundElement }]}
                 onPress={() => router.push('/(tabs)/program')}
                 accessibilityRole="button"
                 accessibilityLabel={`View details of ${program.name}`}
               >
-                <ThemedText style={styles.viewButtonText}>View</ThemedText>
+                <ThemedText style={{ fontSize: 13, fontWeight: '600', color: theme.text }}>View</ThemedText>
               </Pressable>
             </View>
           </View>
@@ -237,8 +240,7 @@ const styles = StyleSheet.create({
   },
   programCard: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
     gap: Spacing.two,
   },
@@ -250,22 +252,17 @@ const styles = StyleSheet.create({
   programName: {
     fontWeight: '700',
     fontSize: 16,
-    color: '#1f2937',
     flex: 1,
   },
   statusBadge: {
     paddingHorizontal: Spacing.two,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: Radii.full,
   },
   statusText: {
     color: '#fff',
     fontSize: 11,
     fontWeight: '600',
-  },
-  meta: {
-    fontSize: 13,
-    color: '#6b7280',
   },
   actions: {
     flexDirection: 'row',
@@ -273,12 +270,13 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
   },
   activateButton: {
-    backgroundColor: '#3c87f7',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     minWidth: 80,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   activateButtonText: {
     color: '#fff',
@@ -286,18 +284,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   viewButton: {
-    backgroundColor: '#f0f0f3',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 8,
-  },
-  viewButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
+    borderRadius: Radii.medium,
+    minHeight: 48,
+    justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: 22,
     marginBottom: Spacing.two,
   },
   emptyText: {

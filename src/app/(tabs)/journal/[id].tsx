@@ -24,7 +24,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { Database } from '@/types/database';
 
@@ -159,7 +159,7 @@ export default function JournalDetailScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedView>
     );
   }
@@ -206,7 +206,7 @@ export default function JournalDetailScreen() {
               {formatDate(entry.created_at)}
             </ThemedText>
             {entry.agent_drafted && (
-              <View style={[styles.badge, { backgroundColor: '#3c87f7' }]}>
+              <View style={[styles.badge, { backgroundColor: theme.accent }]}>
                 <ThemedText type="small" style={styles.badgeText}>
                   AI Drafted
                 </ThemedText>
@@ -236,7 +236,7 @@ export default function JournalDetailScreen() {
               {
                 color: theme.text,
                 backgroundColor: theme.backgroundElement,
-                borderColor: hasChanges ? '#3c87f7' : theme.backgroundSelected,
+                borderColor: hasChanges ? theme.accent : theme.backgroundSelected,
               },
             ]}
             value={content}
@@ -257,6 +257,7 @@ export default function JournalDetailScreen() {
               style={({ pressed }) => [
                 styles.saveButton,
                 {
+                  backgroundColor: theme.accent,
                   opacity: !hasChanges || isSaving ? 0.5 : pressed ? 0.7 : 1,
                 },
               ]}
@@ -276,7 +277,7 @@ export default function JournalDetailScreen() {
               onPress={handleDelete}
               style={({ pressed }) => [
                 styles.deleteButton,
-                { opacity: pressed ? 0.7 : 1 },
+                { backgroundColor: theme.error, opacity: pressed ? 0.7 : 1 },
               ]}
               accessibilityRole="button"
               accessibilityLabel="Delete journal entry"
@@ -352,11 +353,11 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 1,
-    backgroundColor: '#3c87f7',
     paddingVertical: Spacing.three,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 48,
   },
   saveButtonText: {
     color: '#ffffff',
@@ -364,10 +365,10 @@ const styles = StyleSheet.create({
   deleteButton: {
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.four,
-    borderRadius: 8,
-    backgroundColor: '#ff4444',
+    borderRadius: Radii.medium,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 48,
   },
   deleteButtonText: {
     color: '#ffffff',

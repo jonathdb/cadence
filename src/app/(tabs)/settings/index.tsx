@@ -10,7 +10,8 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 
 interface SettingsLink {
@@ -50,40 +51,41 @@ const SETTINGS_LINKS: SettingsLink[] = [
 export default function SettingsIndexScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
+  const theme = useTheme();
 
   return (
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <ThemedText type="subtitle">Settings</ThemedText>
+          <ThemedText type="headlineMedium">Settings</ThemedText>
         </View>
 
         {/* Account Section */}
         <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary">
+          <ThemedText type="labelMedium" themeColor="textSecondary">
             ACCOUNT
           </ThemedText>
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText>{session?.user.email ?? 'Not signed in'}</ThemedText>
           </View>
         </View>
 
         {/* Navigation Links */}
         <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary">
+          <ThemedText type="labelMedium" themeColor="textSecondary">
             CONFIGURATION
           </ThemedText>
           {SETTINGS_LINKS.map((link) => (
             <Pressable
               key={link.route}
-              style={styles.linkCard}
+              style={[styles.linkCard, { backgroundColor: theme.backgroundElement }]}
               onPress={() => router.push(link.route)}
               accessibilityRole="button"
               accessibilityLabel={`Navigate to ${link.label} settings`}
             >
               <View style={styles.linkContent}>
                 <ThemedText style={styles.linkLabel}>{link.label}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
+                <ThemedText type="bodySmall" themeColor="textSecondary">
                   {link.description}
                 </ThemedText>
               </View>
@@ -95,7 +97,7 @@ export default function SettingsIndexScreen() {
         {/* Sign Out */}
         <View style={styles.section}>
           <Pressable
-            style={styles.signOutButton}
+            style={[styles.signOutButton, { backgroundColor: theme.error }]}
             onPress={signOut}
             accessibilityRole="button"
             accessibilityLabel="Sign out of your account"
@@ -124,15 +126,13 @@ const styles = StyleSheet.create({
   },
   card: {
     padding: Spacing.three,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: Radii.medium,
   },
   linkCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.three,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: Radii.medium,
   },
   linkContent: {
     flex: 1,
@@ -143,11 +143,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   signOutButton: {
-    backgroundColor: '#ef4444',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two + 4,
     alignItems: 'center',
     marginTop: Spacing.two,
+    minHeight: 48,
+    justifyContent: 'center',
   },
   signOutText: {
     color: '#fff',

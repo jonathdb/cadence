@@ -11,7 +11,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/utils/supabase';
 
 interface ProgramDayListItem {
@@ -22,6 +23,7 @@ interface ProgramDayListItem {
 
 export default function SessionIndexScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const [days, setDays] = useState<ProgramDayListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [programName, setProgramName] = useState<string | null>(null);
@@ -73,7 +75,7 @@ export default function SessionIndexScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedView>
     );
   }
@@ -81,10 +83,10 @@ export default function SessionIndexScreen() {
   if (days.length === 0) {
     return (
       <ThemedView style={styles.centered}>
-        <ThemedText type="subtitle" style={styles.title}>
+        <ThemedText type="headlineMedium" style={styles.title}>
           Session
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.description}>
+        <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.description}>
           {programName
             ? 'Your active program has no days configured yet.'
             : 'No active program found. Create or activate a program from the Program tab to start logging sessions.'}
@@ -97,39 +99,39 @@ export default function SessionIndexScreen() {
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <ThemedText type="subtitle" style={styles.title}>
+          <ThemedText type="headlineMedium" style={styles.title}>
             Start Session
           </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="bodyMedium" themeColor="textSecondary">
             Pick a day from {programName} to begin logging.
           </ThemedText>
         </View>
 
         {/* Track Route button */}
         <Pressable
-          style={styles.routeCard}
+          style={[styles.routeCard, { borderColor: theme.success, backgroundColor: theme.successSoft }]}
           onPress={() => router.push('/(tabs)/session/route')}
           accessibilityRole="button"
           accessibilityLabel="Track a running or walking route"
         >
-          <View style={styles.routeBadge}>
+          <View style={[styles.routeBadge, { backgroundColor: theme.success }]}>
             <ThemedText style={styles.routeBadgeText}>🏃</ThemedText>
           </View>
-          <ThemedText style={styles.dayName}>Track Route</ThemedText>
+          <ThemedText style={[styles.dayName, { color: theme.text }]}>Track Route</ThemedText>
         </Pressable>
 
         {days.map((day) => (
           <Pressable
             key={day.id}
-            style={styles.dayCard}
+            style={[styles.dayCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}
             onPress={() => router.push(`/(tabs)/session/${day.id}`)}
             accessibilityRole="button"
             accessibilityLabel={`Start session for Day ${day.day_number}: ${day.name}`}
           >
-            <View style={styles.dayBadge}>
+            <View style={[styles.dayBadge, { backgroundColor: theme.accent }]}>
               <ThemedText style={styles.dayBadgeText}>{day.day_number}</ThemedText>
             </View>
-            <ThemedText style={styles.dayName}>{day.name}</ThemedText>
+            <ThemedText style={[styles.dayName, { color: theme.text }]}>{day.name}</ThemedText>
           </Pressable>
         ))}
       </ScrollView>
@@ -156,9 +158,7 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     marginBottom: Spacing.two,
   },
-  title: {
-    fontSize: 22,
-  },
+  title: {},
   description: {
     textAlign: 'center',
   },
@@ -167,25 +167,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
+    minHeight: 48,
   },
   routeCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
     borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
-    backgroundColor: '#f0fdf4',
+    minHeight: 48,
   },
   routeBadge: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#22c55e',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -196,7 +194,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#3c87f7',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -209,6 +206,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1f2937',
   },
 });

@@ -11,7 +11,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     getHealthConnectionStatus,
@@ -25,6 +26,7 @@ import {
 
 export default function HealthScreen() {
   const { session } = useAuth();
+  const theme = useTheme();
   const [available, setAvailable] = useState<boolean | null>(null);
   const [permissions, setPermissions] = useState<HealthPermissions | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
@@ -91,13 +93,13 @@ export default function HealthScreen() {
   function getPermissionStatusColor(status: PermissionStatus): string {
     switch (status) {
       case 'granted':
-        return '#16a34a';
+        return theme.success;
       case 'denied':
-        return '#dc2626';
+        return theme.error;
       case 'not_determined':
-        return '#d97706';
+        return theme.warning;
       default:
-        return '#6b7280';
+        return theme.textSecondary;
     }
   }
 
@@ -136,14 +138,14 @@ export default function HealthScreen() {
         </View>
 
         {error && (
-          <View style={styles.errorContainer}>
-            <ThemedText style={styles.errorText}>{error}</ThemedText>
+          <View style={[styles.errorContainer, { backgroundColor: theme.errorSoft }]}>
+            <ThemedText style={[styles.errorText, { color: theme.error }]}>{error}</ThemedText>
           </View>
         )}
 
         {/* Permission Status */}
         {permissions && (
-          <View style={styles.statusCard}>
+          <View style={[styles.statusCard, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText style={styles.sectionLabel}>Permissions</ThemedText>
             <PermissionRow label="Workouts" status={permissions.workouts} getColor={getPermissionStatusColor} />
             <PermissionRow label="Heart Rate" status={permissions.heartRate} getColor={getPermissionStatusColor} />
@@ -155,7 +157,7 @@ export default function HealthScreen() {
         {/* Connect / Request Permissions Button */}
         <View style={styles.section}>
           <Pressable
-            style={[styles.connectButton, isRequesting && styles.buttonDisabled]}
+            style={[styles.connectButton, { backgroundColor: theme.accent }, isRequesting && styles.buttonDisabled]}
             onPress={handleRequestPermissions}
             disabled={isRequesting}
             accessibilityRole="button"
@@ -176,7 +178,7 @@ export default function HealthScreen() {
           <View style={styles.section}>
             <ThemedText style={styles.sectionLabel}>Data Sync</ThemedText>
             <Pressable
-              style={[styles.syncButton, isSyncing && styles.buttonDisabled]}
+              style={[styles.syncButton, { backgroundColor: theme.accent }, isSyncing && styles.buttonDisabled]}
               onPress={handleSync}
               disabled={isSyncing}
               accessibilityRole="button"
@@ -190,7 +192,7 @@ export default function HealthScreen() {
             </Pressable>
 
             {syncResult && (
-              <View style={[styles.syncResultCard, !syncResult.success && styles.syncResultError]}>
+              <View style={[styles.syncResultCard, { backgroundColor: syncResult.success ? theme.successSoft : theme.warningSoft }, !syncResult.success && styles.syncResultError]}>
                 <ThemedText type="small">
                   Records synced: {syncResult.recordsSynced}
                 </ThemedText>
@@ -198,7 +200,7 @@ export default function HealthScreen() {
                   Records normalized: {syncResult.recordsNormalized}
                 </ThemedText>
                 {syncResult.errors.length > 0 && (
-                  <ThemedText type="small" style={styles.syncErrorText}>
+                  <ThemedText type="small" style={[styles.syncErrorText, { color: theme.error }]}>
                     {syncResult.errors.length} error(s) occurred
                   </ThemedText>
                 )}
@@ -261,32 +263,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
     padding: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
   },
   errorText: {
     fontSize: 14,
-    color: '#dc2626',
     textAlign: 'center',
   },
   statusCard: {
     padding: Spacing.three,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: Radii.medium,
     gap: Spacing.one,
   },
   connectButton: {
-    backgroundColor: '#3c87f7',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two + 4,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   syncButton: {
-    backgroundColor: '#6366f1',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two + 4,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -298,14 +299,11 @@ const styles = StyleSheet.create({
   },
   syncResultCard: {
     padding: Spacing.two,
-    borderRadius: 8,
-    backgroundColor: '#dcfce7',
+    borderRadius: Radii.medium,
     gap: Spacing.one,
   },
   syncResultError: {
-    backgroundColor: '#fef3c7',
   },
   syncErrorText: {
-    color: '#dc2626',
   },
 });

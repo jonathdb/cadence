@@ -19,7 +19,8 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
     AutoFillSource,
     getAutoFillValues,
@@ -88,6 +89,7 @@ interface SetFormState {
 // --- Timer Display Component ---
 
 function TimerDisplay({ timerState }: { timerState: TimerState }) {
+  const theme = useTheme();
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -97,27 +99,27 @@ function TimerDisplay({ timerState }: { timerState: TimerState }) {
   return (
     <View style={styles.timerContainer}>
       <View style={styles.timerHeader}>
-        <ThemedText style={styles.timerPhaseLabel}>
+        <ThemedText style={[styles.timerPhaseLabel, { color: theme.timerText }]}>
           {timerState.phase.toUpperCase()}
         </ThemedText>
         {timerState.total_rounds > 1 && (
-          <ThemedText style={styles.timerRound}>
+          <ThemedText style={[styles.timerRound, { color: theme.timerText }]}>
             Round {timerState.current_round}/{timerState.total_rounds}
           </ThemedText>
         )}
       </View>
       <View style={styles.timerTimeRow}>
         {timerState.type !== 'duration' ? (
-          <ThemedText style={styles.timerCountdown}>
+          <ThemedText type="monoLarge" style={{ color: theme.timerText }}>
             {formatTime(timerState.remaining_seconds)}
           </ThemedText>
         ) : (
-          <ThemedText style={styles.timerCountdown}>
+          <ThemedText type="monoLarge" style={{ color: theme.timerText }}>
             {formatTime(timerState.elapsed_seconds)}
           </ThemedText>
         )}
       </View>
-      <ThemedText style={styles.timerElapsed}>
+      <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
         Elapsed: {formatTime(timerState.elapsed_seconds)}
       </ThemedText>
     </View>
@@ -543,10 +545,12 @@ export default function SessionLoggingScreen() {
 
   // --- Render ---
 
+  const theme = useTheme();
+
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedView>
     );
   }
@@ -588,10 +592,10 @@ export default function SessionLoggingScreen() {
 
         {/* Active timer display */}
         {timerState && timerState.is_running && (
-          <View style={styles.activeTimerSection}>
+          <View style={[styles.activeTimerSection, { backgroundColor: theme.timerBackground, borderColor: theme.timerBorder }]}>
             <TimerDisplay timerState={timerState} />
             <Pressable
-              style={styles.stopTimerButton}
+              style={[styles.stopTimerButton, { backgroundColor: theme.error }]}
               onPress={handleStopTimer}
               accessibilityRole="button"
               accessibilityLabel="Stop timer"
@@ -618,19 +622,19 @@ export default function SessionLoggingScreen() {
           const isTimerActive = activeTimerExercise === exerciseId;
 
           return (
-            <View key={item.id} style={styles.exerciseCard}>
+            <View key={item.id} style={[styles.exerciseCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}>
               {/* Exercise header */}
               <View style={styles.exerciseHeader}>
-                <View style={styles.orderBadge}>
+                <View style={[styles.orderBadge, { backgroundColor: theme.accent }]}>
                   <ThemedText style={styles.orderText}>
                     {index + 1}
                   </ThemedText>
                 </View>
                 <View style={styles.exerciseInfo}>
-                  <ThemedText style={styles.exerciseName}>
+                  <ThemedText style={[styles.exerciseName, { color: theme.text }]}>
                     {item.exercises.name}
                   </ThemedText>
-                  <ThemedText style={styles.targetInfo}>
+                  <ThemedText style={[styles.targetInfo, { color: theme.textSecondary }]}>
                     Target: {item.target_sets}×{item.target_reps}
                     {item.target_weight
                       ? ` @ ${item.target_weight}kg`
@@ -643,25 +647,25 @@ export default function SessionLoggingScreen() {
               {/* Logged sets list */}
               {sets.length > 0 && (
                 <View style={styles.setsListContainer}>
-                  <View style={styles.setsHeader}>
-                    <ThemedText style={styles.setsHeaderLabel}>Set</ThemedText>
-                    <ThemedText style={styles.setsHeaderLabel}>Reps</ThemedText>
-                    <ThemedText style={styles.setsHeaderLabel}>Weight</ThemedText>
-                    <ThemedText style={styles.setsHeaderLabel}>RPE</ThemedText>
-                    <ThemedText style={styles.setsHeaderLabel}>PR</ThemedText>
+                  <View style={[styles.setsHeader, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Set</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Reps</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Weight</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>RPE</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>PR</ThemedText>
                   </View>
                   {sets.map((set) => (
                     <View key={set.id} style={styles.setRow}>
-                      <ThemedText style={styles.setCell}>
+                      <ThemedText style={[styles.setCell, { color: theme.text }]}>
                         {set.set_number}
                       </ThemedText>
-                      <ThemedText style={styles.setCell}>
+                      <ThemedText style={[styles.setCell, { color: theme.text }]}>
                         {set.reps}
                       </ThemedText>
-                      <ThemedText style={styles.setCell}>
+                      <ThemedText style={[styles.setCell, { color: theme.text }]}>
                         {set.weight}kg
                       </ThemedText>
-                      <ThemedText style={styles.setCell}>
+                      <ThemedText style={[styles.setCell, { color: theme.text }]}>
                         {set.rpe ?? '-'}
                       </ThemedText>
                       <ThemedText style={styles.setCellPr}>
@@ -673,12 +677,12 @@ export default function SessionLoggingScreen() {
               )}
 
               {/* Set input form */}
-              <View style={styles.setForm}>
+              <View style={[styles.setForm, { borderTopColor: theme.borderSubtle }]}>
                 <View style={styles.formRow}>
                   <View style={styles.formField}>
-                    <ThemedText style={styles.formLabel}>Reps</ThemedText>
+                    <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Reps</ThemedText>
                     <TextInput
-                      style={styles.formInput}
+                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
                       value={form.reps}
                       onChangeText={(v) =>
                         handleFormChange(exerciseId, 'reps', v)
@@ -688,9 +692,9 @@ export default function SessionLoggingScreen() {
                     />
                   </View>
                   <View style={styles.formField}>
-                    <ThemedText style={styles.formLabel}>Weight</ThemedText>
+                    <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Weight</ThemedText>
                     <TextInput
-                      style={styles.formInput}
+                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
                       value={form.weight}
                       onChangeText={(v) =>
                         handleFormChange(exerciseId, 'weight', v)
@@ -700,9 +704,9 @@ export default function SessionLoggingScreen() {
                     />
                   </View>
                   <View style={styles.formField}>
-                    <ThemedText style={styles.formLabel}>RPE</ThemedText>
+                    <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>RPE</ThemedText>
                     <TextInput
-                      style={styles.formInput}
+                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
                       value={form.rpe}
                       onChangeText={(v) =>
                         handleFormChange(exerciseId, 'rpe', v)
@@ -710,24 +714,26 @@ export default function SessionLoggingScreen() {
                       keyboardType="numeric"
                       accessibilityLabel="RPE"
                       placeholder="—"
+                      placeholderTextColor={theme.textTertiary}
                     />
                   </View>
                 </View>
                 <View style={styles.notesRow}>
                   <TextInput
-                    style={styles.notesInput}
+                    style={[styles.notesInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
                     value={form.notes}
                     onChangeText={(v) =>
                       handleFormChange(exerciseId, 'notes', v)
                     }
                     placeholder="Notes (optional)"
+                    placeholderTextColor={theme.textTertiary}
                     accessibilityLabel="Set notes"
                   />
                 </View>
 
                 <View style={styles.formActions}>
                   <Pressable
-                    style={styles.addSetButton}
+                    style={[styles.addSetButton, { backgroundColor: theme.accent }]}
                     onPress={() => handleAddSet(exerciseId)}
                     accessibilityRole="button"
                     accessibilityLabel={`Log set for ${item.exercises.name}`}
@@ -739,14 +745,14 @@ export default function SessionLoggingScreen() {
 
                   {hasTimer && !isTimerActive && (
                     <Pressable
-                      style={styles.timerButton}
+                      style={[styles.timerButton, { backgroundColor: theme.timerBackground, borderColor: theme.timerBorder }]}
                       onPress={() =>
                         handleStartTimer(exerciseId, item.timer_config!)
                       }
                       accessibilityRole="button"
                       accessibilityLabel={`Start timer for ${item.exercises.name}`}
                     >
-                      <ThemedText style={styles.timerButtonText}>
+                      <ThemedText style={[styles.timerButtonText, { color: theme.timerText }]}>
                         ⏱ Start Timer
                       </ThemedText>
                     </Pressable>
@@ -760,7 +766,7 @@ export default function SessionLoggingScreen() {
         {/* Complete session button */}
         {totalSetsLogged > 0 && (
           <Pressable
-            style={styles.completeButton}
+            style={[styles.completeButton, { backgroundColor: theme.success }]}
             onPress={handleCompleteSession}
             accessibilityRole="button"
             accessibilityLabel="Complete session"
@@ -802,12 +808,10 @@ const styles = StyleSheet.create({
   },
   // Timer display
   activeTimerSection: {
-    backgroundColor: '#f0f9ff',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
     gap: Spacing.two,
     borderWidth: 1,
-    borderColor: '#bae6fd',
   },
   timerContainer: {
     alignItems: 'center',
@@ -821,12 +825,10 @@ const styles = StyleSheet.create({
   timerPhaseLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#0369a1',
     letterSpacing: 1,
   },
   timerRound: {
     fontSize: 12,
-    color: '#0369a1',
     fontWeight: '500',
   },
   timerTimeRow: {
@@ -835,17 +837,16 @@ const styles = StyleSheet.create({
   timerCountdown: {
     fontSize: 36,
     fontWeight: '700',
-    color: '#0c4a6e',
   },
   timerElapsed: {
     fontSize: 12,
-    color: '#6b7280',
   },
   stopTimerButton: {
-    backgroundColor: '#ef4444',
     paddingVertical: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   stopTimerText: {
     color: '#fff',
@@ -855,8 +856,7 @@ const styles = StyleSheet.create({
   // Exercise card
   exerciseCard: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
     gap: Spacing.two,
   },
@@ -869,7 +869,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#3c87f7',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -885,11 +884,9 @@ const styles = StyleSheet.create({
   exerciseName: {
     fontWeight: '700',
     fontSize: 15,
-    color: '#1f2937',
   },
   targetInfo: {
     fontSize: 12,
-    color: '#6b7280',
   },
   // Logged sets list
   setsListContainer: {
@@ -899,13 +896,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: Spacing.one,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
   },
   setsHeaderLabel: {
     flex: 1,
     fontSize: 11,
     fontWeight: '600',
-    color: '#6b7280',
     textAlign: 'center',
     textTransform: 'uppercase',
   },
@@ -917,7 +912,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     textAlign: 'center',
-    color: '#374151',
   },
   setCellPr: {
     flex: 1,
@@ -928,7 +922,6 @@ const styles = StyleSheet.create({
   setForm: {
     gap: Spacing.two,
     borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
     paddingTop: Spacing.two,
   },
   formRow: {
@@ -942,31 +935,28 @@ const styles = StyleSheet.create({
   formLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#6b7280',
     textTransform: 'uppercase',
   },
   formInput: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1f2937',
     textAlign: 'center',
+    minHeight: 48,
   },
   notesRow: {
     gap: 2,
   },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.one,
     fontSize: 14,
-    color: '#374151',
+    minHeight: 48,
   },
   formActions: {
     flexDirection: 'row',
@@ -974,10 +964,11 @@ const styles = StyleSheet.create({
   },
   addSetButton: {
     flex: 1,
-    backgroundColor: '#3c87f7',
     paddingVertical: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   addSetButtonText: {
     color: '#fff',
@@ -985,26 +976,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   timerButton: {
-    backgroundColor: '#f0f9ff',
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     borderWidth: 1,
-    borderColor: '#bae6fd',
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   timerButtonText: {
-    color: '#0369a1',
     fontSize: 14,
     fontWeight: '600',
   },
   // Complete session
   completeButton: {
-    backgroundColor: '#10b981',
     paddingVertical: Spacing.three,
-    borderRadius: 12,
+    borderRadius: Radii.large,
     alignItems: 'center',
     marginTop: Spacing.two,
+    minHeight: 48,
+    justifyContent: 'center',
   },
   completeButtonText: {
     color: '#fff',

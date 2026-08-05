@@ -6,12 +6,11 @@
 import { DarkTheme, DefaultTheme, Slot, ThemeProvider, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootLayoutNav() {
   const { session, isLoading } = useAuth();
@@ -24,13 +23,18 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!session && !inAuthGroup) {
-      // Not signed in, redirect to login
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
-      // Signed in but still on auth screen, redirect to main app
       router.replace('/(tabs)/chat');
     }
   }, [session, isLoading, segments]);
+
+  // Hide splash once loading is done (native only)
+  useEffect(() => {
+    if (!isLoading && Platform.OS !== 'web') {
+      SplashScreen.hideAsync();
+    }
+  }, [isLoading]);
 
   return <Slot />;
 }
@@ -41,7 +45,6 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <AnimatedSplashOverlay />
         <RootLayoutNav />
       </ThemeProvider>
     </AuthProvider>

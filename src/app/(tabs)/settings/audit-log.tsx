@@ -22,7 +22,8 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { getAuditLog, type AuditLogEntryRow } from '@/services/audit-log';
 import type { ActionOutcome, ApprovalStatus } from '@/types/permissions';
@@ -41,13 +42,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 function getStatusColor(status: ApprovalStatus): string {
   switch (status) {
     case 'approved':
-      return '#16a34a';
+      return '#10b981';
     case 'rejected':
-      return '#dc2626';
+      return '#ef4444';
     case 'auto_applied':
-      return '#2563eb';
+      return '#06b6d4';
     default:
-      return '#6b7280';
+      return '#8b919a';
   }
 }
 
@@ -55,11 +56,11 @@ function getStatusColor(status: ApprovalStatus): string {
 function getOutcomeColor(outcome: ActionOutcome): string {
   switch (outcome) {
     case 'success':
-      return '#16a34a';
+      return '#10b981';
     case 'failure':
-      return '#dc2626';
+      return '#ef4444';
     default:
-      return '#6b7280';
+      return '#8b919a';
   }
 }
 
@@ -90,9 +91,10 @@ function formatStatus(status: ApprovalStatus): string {
 
 function AuditLogItem({ entry }: { entry: AuditLogEntryRow }) {
   const categoryLabel = CATEGORY_LABELS[entry.permission_category] ?? entry.permission_category;
+  const theme = useTheme();
 
   return (
-    <View style={styles.entryCard} accessibilityRole="summary">
+    <View style={[styles.entryCard, { backgroundColor: theme.backgroundElement }]} accessibilityRole="summary">
       {/* Header row: timestamp and action type */}
       <View style={styles.entryHeader}>
         <ThemedText type="small" themeColor="textSecondary">
@@ -129,7 +131,7 @@ function AuditLogItem({ entry }: { entry: AuditLogEntryRow }) {
 
       {/* Error message if failure */}
       {entry.error_message && (
-        <ThemedText type="small" style={styles.errorMessage}>
+        <ThemedText type="small" style={[styles.errorMessage, { color: theme.error }]}>
           {entry.error_message}
         </ThemedText>
       )}
@@ -249,8 +251,7 @@ const styles = StyleSheet.create({
   },
   entryCard: {
     padding: Spacing.three,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: Radii.medium,
     gap: Spacing.one,
   },
   entryHeader: {
@@ -270,24 +271,21 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: Spacing.two,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radii.full,
   },
   badgeText: {
     fontWeight: '600',
   },
   errorMessage: {
-    color: '#dc2626',
     marginTop: Spacing.one,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
     padding: Spacing.two,
     margin: Spacing.four,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
   },
   errorText: {
     fontSize: 14,
-    color: '#dc2626',
     textAlign: 'center',
   },
   emptyContainer: {

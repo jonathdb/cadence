@@ -2,8 +2,7 @@
  * Edge Function: store-api-key
  *
  * Receives an API key from the authenticated client and stores it
- * encrypted server-side via Supabase Vault. Runs with service_role
- * so it can call the Vault functions that require elevated privileges.
+ * via the store_user_api_key RPC (which runs as SECURITY DEFINER).
  *
  * Requirements: 3.1, 3.2, 29.1, 29.2
  */
@@ -67,42 +66,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return errorResponse(400, 'invalid_key', 'API key is required');
   }
 
-  const keyColumn = body.provider === 'openai'
-    ? 'openai_key_encrypted'
-    : 'anthropic_key_encrypted';
-
   try {
-    // Check if user already has a record in user_api_keys
-    const { data: existing } = await supabase
-      .from('user_api_keys')
-      .select('id')
-      .eq('user_id', userId)
-      .single();
+    // Use the store_user_api_key RPC function (runs as SECURITY DEFINER with service_role)
+    const { error: rpcError } = await supabase.rpc('store_user_api_key', {
+      p_user_id: userId,
+      p_provider: body.provider,
+      p_key: body.key.trim(),
+    });
 
-    if (existing) {
-      // Update existing record
-      const { error: updateError } = await supabase
-        .from('user_api_keys')
-        .update({ [keyColumn]: body.key.trim(), updated_at: new Date().toISOString() })
-        .eq('user_id', userId);
-
-      if (updateError) {
-        console.error('Failed to update API key:', updateError.message);
-        return errorResponse(500, 'storage_error', 'Failed to store API key');
-      }
-    } else {
-      // Insert new record
-      const { error: insertError } = await supabase
-        .from('user_api_keys')
-        .insert({
-          user_id: userId,
-          [keyColumn]: body.key.trim(),
-        });
-
-      if (insertError) {
-        console.error('Failed to insert API key:', insertError.message);
-        return errorResponse(500, 'storage_error', 'Failed to store API key');
-      }
+    if (rpcError) {
+      console.error('store_user_api_key RPC error:', rpcError.message);
+      return errorResponse(500, 'storage_error', 'Failed to store API key');
     }
 
     return new Response(

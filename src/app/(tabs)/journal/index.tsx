@@ -20,7 +20,7 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { Database } from '@/types/database';
 
@@ -105,7 +105,7 @@ export default function JournalListScreen() {
       <View style={styles.entryHeader}>
         <ThemedText type="smallBold">{formatDate(item.created_at)}</ThemedText>
         {item.agent_drafted && (
-          <View style={[styles.badge, { backgroundColor: '#3c87f7' }]}>
+          <View style={[styles.badge, { backgroundColor: theme.accent }]}>
             <ThemedText type="small" style={styles.badgeText}>
               AI Draft
             </ThemedText>
@@ -121,7 +121,7 @@ export default function JournalListScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedView>
     );
   }
@@ -136,7 +136,7 @@ export default function JournalListScreen() {
           onPress={handleNewEntry}
           style={({ pressed }) => [
             styles.newButton,
-            { opacity: pressed ? 0.7 : 1 },
+            { backgroundColor: theme.accent, opacity: pressed ? 0.7 : 1 },
           ]}
           accessibilityRole="button"
           accessibilityLabel="Create new journal entry"
@@ -190,10 +190,11 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   newButton: {
-    backgroundColor: '#3c87f7',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
+    minHeight: 48,
+    justifyContent: 'center',
   },
   newButtonText: {
     color: '#ffffff',
@@ -204,7 +205,7 @@ const styles = StyleSheet.create({
   },
   entryCard: {
     padding: Spacing.three,
-    borderRadius: 12,
+    borderRadius: Radii.large,
     gap: Spacing.two,
   },
   entryHeader: {
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: Spacing.two,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radii.full,
   },
   badgeText: {
     color: '#ffffff',

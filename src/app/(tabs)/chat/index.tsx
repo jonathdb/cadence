@@ -23,7 +23,8 @@ import {
 import { ProgramProposal } from '@/components/ProgramProposal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/utils/supabase';
 
@@ -52,6 +53,7 @@ interface ToolCallData {
 export default function ChatScreen() {
   const { session } = useAuth();
   const router = useRouter();
+  const theme = useTheme();
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -128,7 +130,6 @@ export default function ChatScreen() {
             : null,
         });
       } catch {
-        // Non-critical - continue even if persistence fails
         console.warn('Failed to persist chat message');
       }
     },
@@ -146,7 +147,6 @@ export default function ChatScreen() {
     setError(null);
     setInputText('');
 
-    // Add user message to display
     const userMsg: DisplayMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -155,7 +155,6 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, userMsg]);
     persistMessage(userMsg);
 
-    // Build conversation context (last 20 messages for context window)
     const conversationContext = messages.slice(-20).map((m) => ({
       role: m.role,
       content: m.content,
@@ -164,9 +163,9 @@ export default function ChatScreen() {
     setIsStreaming(true);
 
     try {
-      // Get the current session token
       const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (!currentSession) {
+      const accessToken = currentSession?.access_token || session?.access_token;
+      if (!accessToken) {
         setError('Session expired. Please sign in again.');
         setIsStreaming(false);
         return;
@@ -176,13 +175,13 @@ export default function ChatScreen() {
       const response = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${currentSession.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           message: text,
           conversation: conversationContext,
-          provider: 'openai',
+          provider: 'anthropic',
         }),
       });
 
@@ -201,7 +200,6 @@ export default function ChatScreen() {
         return;
       }
 
-      // Stream SSE response
       const reader = response.body?.getReader();
       if (!reader) {
         setError('Failed to read response stream.');
@@ -214,7 +212,6 @@ export default function ChatScreen() {
       let toolCalls: ToolCallData[] = [];
       const assistantMsgId = `assistant-${Date.now()}`;
 
-      // Add empty assistant message placeholder
       setMessages((prev) => [
         ...prev,
         { id: assistantMsgId, role: 'assistant', content: '' },
@@ -270,7 +267,6 @@ export default function ChatScreen() {
         }
       }
 
-      // Persist the final assistant message
       const finalAssistantMsg: DisplayMessage = {
         id: assistantMsgId,
         role: 'assistant',
@@ -286,7 +282,7 @@ export default function ChatScreen() {
   }, [inputText, isStreaming, messages, persistMessage]);
 
   // ---------------------------------------------------------------------------
-  // Handle tool call approval — supports all tool types
+  // Handle tool call approval
   // ---------------------------------------------------------------------------
 
   const handleApproveToolCall = useCallback(async (messageId: string, toolCall: ToolCallData) => {
@@ -298,7 +294,6 @@ export default function ChatScreen() {
       return;
     }
 
-    // Update tool call status to approved in UI
     setMessages((prev) =>
       prev.map((m) =>
         m.id === messageId
@@ -319,7 +314,6 @@ export default function ChatScreen() {
         return;
       }
 
-      // Route to appropriate handler based on tool name
       if (toolCall.name === 'program_create') {
         await handleProgramCreate(args, currentSession);
       } else if (toolCall.name === 'program_activate') {
@@ -331,7 +325,6 @@ export default function ChatScreen() {
       } else if (toolCall.name.startsWith('spotify_')) {
         await handleSpotifyAction(toolCall.name, args, currentSession);
       } else {
-        // Generic tool call — invoke execute-tool-call Edge Function
         await handleGenericToolCall(toolCall.name, args, currentSession);
       }
     } catch (err) {
@@ -435,7 +428,6 @@ export default function ChatScreen() {
       }
     }
 
-    // Activate the program
     const { error: activateError } = await supabase.rpc('activate_program', {
       p_user_id: currentSession.user.id,
       p_program_id: program.id,
@@ -482,7 +474,6 @@ export default function ChatScreen() {
     args: Record<string, unknown>,
     currentSession: { user: { id: string }; access_token: string },
   ) => {
-    // Invoke the execute-tool-call Edge Function for program modifications
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
     const response = await fetch(`${supabaseUrl}/functions/v1/execute-tool-call`, {
       method: 'POST',
@@ -638,24 +629,24 @@ export default function ChatScreen() {
         <View
           style={[
             styles.messageBubble,
-            isUser && styles.userBubble,
-            isSystem && styles.systemBubble,
-            !isUser && !isSystem && styles.assistantBubble,
+            isUser && { backgroundColor: theme.chatBubbleUser, alignSelf: 'flex-end' as const },
+            isSystem && { backgroundColor: theme.chatBubbleSystem, alignSelf: 'center' as const, maxWidth: '90%' },
+            !isUser && !isSystem && { backgroundColor: theme.chatBubbleAssistant, alignSelf: 'flex-start' as const },
           ]}
         >
           {item.content ? (
             <ThemedText
               style={[
                 styles.messageText,
-                isUser && styles.userText,
-                isSystem && styles.systemText,
+                isUser && { color: theme.chatBubbleUserText },
+                isSystem && { color: theme.chatBubbleSystemText, textAlign: 'center' },
+                !isUser && !isSystem && { color: theme.chatBubbleAssistantText },
               ]}
             >
               {item.content}
             </ThemedText>
           ) : null}
 
-          {/* Tool call proposals */}
           {item.toolCalls?.map((tc) => (
             <ProgramProposal
               key={tc.id}
@@ -667,13 +658,13 @@ export default function ChatScreen() {
         </View>
       </View>
     );
-  }, [handleApproveToolCall, handleRejectToolCall]);
+  }, [handleApproveToolCall, handleRejectToolCall, theme]);
 
   if (isLoadingHistory) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3c87f7" />
+          <ActivityIndicator size="large" color={theme.accent} />
         </View>
       </ThemedView>
     );
@@ -687,8 +678,8 @@ export default function ChatScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {error && (
-          <View style={styles.errorBanner}>
-            <ThemedText style={styles.errorText}>{error}</ThemedText>
+          <View style={[styles.errorBanner, { backgroundColor: theme.errorSoft }]}>
+            <ThemedText style={{ color: theme.error, fontSize: 13, textAlign: 'center' }}>{error}</ThemedText>
             {error.includes('API key') && (
               <Pressable onPress={() => router.push('/(tabs)/settings')}>
                 <ThemedText type="linkPrimary">Go to Settings</ThemedText>
@@ -705,10 +696,10 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messageList}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <ThemedText type="subtitle" style={styles.emptyTitle}>
+              <ThemedText type="headlineMedium" style={styles.emptyTitle}>
                 Cadence Agent
               </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
+              <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.emptyText}>
                 Describe your fitness goals and I'll create a personalized
                 training program for you.
               </ThemedText>
@@ -717,11 +708,15 @@ export default function ChatScreen() {
         />
 
         {/* Input area */}
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { borderTopColor: theme.border }]}>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              color: theme.text,
+            }]}
             placeholder="Message the agent..."
-            placeholderTextColor="#888"
+            placeholderTextColor={theme.textTertiary}
             value={inputText}
             onChangeText={setInputText}
             multiline
@@ -731,7 +726,7 @@ export default function ChatScreen() {
             blurOnSubmit={false}
           />
           <Pressable
-            style={[styles.sendButton, (isStreaming || !inputText.trim()) && styles.sendButtonDisabled]}
+            style={[styles.sendButton, { backgroundColor: theme.accent }, (isStreaming || !inputText.trim()) && styles.sendButtonDisabled]}
             onPress={sendMessage}
             disabled={isStreaming || !inputText.trim()}
           >
@@ -768,61 +763,37 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     padding: Spacing.three,
-    borderRadius: 12,
+    borderRadius: Radii.large,
     maxWidth: '85%',
-  },
-  userBubble: {
-    backgroundColor: '#3c87f7',
-    alignSelf: 'flex-end',
-  },
-  assistantBubble: {
-    backgroundColor: '#f0f0f3',
-    alignSelf: 'flex-start',
-  },
-  systemBubble: {
-    backgroundColor: '#dcfce7',
-    alignSelf: 'center',
-    maxWidth: '90%',
   },
   messageText: {
     fontSize: 15,
     lineHeight: 22,
-    color: '#1a1a1a',
-  },
-  userText: {
-    color: '#fff',
-  },
-  systemText: {
-    color: '#166534',
-    textAlign: 'center',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: Spacing.two,
     borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
     gap: Spacing.two,
   },
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
+    borderRadius: Radii.xl,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 15,
     maxHeight: 100,
-    color: '#000',
-    backgroundColor: '#f9f9f9',
+    minHeight: 48,
   },
   sendButton: {
-    backgroundColor: '#3c87f7',
-    borderRadius: 20,
+    borderRadius: Radii.xl,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two + 2,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: 48,
   },
   sendButtonDisabled: {
     opacity: 0.5,
@@ -833,15 +804,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   errorBanner: {
-    backgroundColor: '#fee2e2',
     padding: Spacing.two,
     alignItems: 'center',
     gap: 4,
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 13,
-    textAlign: 'center',
   },
   emptyState: {
     flex: 1,
@@ -851,7 +816,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.six,
   },
   emptyTitle: {
-    fontSize: 24,
     marginBottom: Spacing.two,
   },
   emptyText: {

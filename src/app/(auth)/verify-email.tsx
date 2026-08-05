@@ -14,11 +14,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/utils/supabase';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const [isResending, setIsResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
@@ -26,9 +28,6 @@ export default function VerifyEmailScreen() {
     setIsResending(true);
     setResendMessage(null);
 
-    // Supabase resend requires the email — we use the current session user if available,
-    // otherwise prompt the user to sign up again. In practice, this screen is only shown
-    // right after sign-up so the session should be present or we can attempt a generic resend.
     const { data: { session } } = await supabase.auth.getSession();
     const email = session?.user?.email;
 
@@ -54,16 +53,16 @@ export default function VerifyEmailScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <ThemedText type="title" style={styles.title}>
+          <ThemedText type="headlineLarge" style={styles.title}>
             Check Your Email
           </ThemedText>
 
-          <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
+          <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.subtitle}>
             We've sent a verification link to your email address. Please click the link in the email
             to verify your account before signing in.
           </ThemedText>
 
-          <ThemedText type="small" themeColor="textSecondary" style={styles.instructions}>
+          <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.instructions}>
             Didn't receive it? Check your spam folder or resend the verification email below.
           </ThemedText>
 
@@ -71,14 +70,20 @@ export default function VerifyEmailScreen() {
             <View
               style={[
                 styles.messageContainer,
-                resendMessage.includes('sent') ? styles.successContainer : styles.errorContainer,
+                {
+                  backgroundColor: resendMessage.includes('sent')
+                    ? theme.successSoft
+                    : theme.errorSoft,
+                },
               ]}
               accessibilityRole="alert"
             >
               <ThemedText
-                style={
-                  resendMessage.includes('sent') ? styles.successText : styles.errorText
-                }
+                style={{
+                  color: resendMessage.includes('sent') ? theme.success : theme.error,
+                  fontSize: 14,
+                  textAlign: 'center',
+                }}
               >
                 {resendMessage}
               </ThemedText>
@@ -86,7 +91,7 @@ export default function VerifyEmailScreen() {
           )}
 
           <Pressable
-            style={[styles.resendButton, isResending && styles.buttonDisabled]}
+            style={[styles.resendButton, { borderColor: theme.accent }, isResending && styles.buttonDisabled]}
             onPress={handleResend}
             disabled={isResending}
             accessibilityRole="button"
@@ -94,14 +99,14 @@ export default function VerifyEmailScreen() {
             accessibilityState={{ disabled: isResending }}
           >
             {isResending ? (
-              <ActivityIndicator color="#3c87f7" />
+              <ActivityIndicator color={theme.accent} />
             ) : (
-              <ThemedText style={styles.resendButtonText}>Resend Verification Email</ThemedText>
+              <ThemedText style={[styles.resendButtonText, { color: theme.accent }]}>Resend Verification Email</ThemedText>
             )}
           </Pressable>
 
           <Pressable
-            style={styles.button}
+            style={[styles.button, { backgroundColor: theme.accent }]}
             onPress={() => router.replace('/(auth)/login')}
             accessibilityRole="button"
             accessibilityLabel="Back to sign in"
@@ -130,7 +135,6 @@ const styles = StyleSheet.create({
   },
   title: {
     textAlign: 'center',
-    fontSize: 28,
   },
   subtitle: {
     textAlign: 'center',
@@ -141,47 +145,32 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   messageContainer: {
-    padding: Spacing.two,
-    borderRadius: 8,
+    padding: Spacing.twoHalf,
+    borderRadius: Radii.medium,
     width: '100%',
-  },
-  successContainer: {
-    backgroundColor: '#dcfce7',
-  },
-  errorContainer: {
-    backgroundColor: '#fee2e2',
-  },
-  successText: {
-    color: '#16a34a',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: 14,
-    textAlign: 'center',
   },
   resendButton: {
     borderWidth: 1,
-    borderColor: '#3c87f7',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     alignItems: 'center',
     width: '100%',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   resendButtonText: {
-    color: '#3c87f7',
     fontSize: 16,
     fontWeight: '600',
   },
   button: {
-    backgroundColor: '#3c87f7',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     alignItems: 'center',
     width: '100%',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,

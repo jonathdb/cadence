@@ -17,7 +17,8 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { supabase } from '@/utils/supabase';
 
 interface ExerciseData {
@@ -68,6 +69,7 @@ function formatTimerConfig(config: Record<string, unknown> | null): string | nul
 export default function ProgramDayDetailScreen() {
   const { dayId } = useLocalSearchParams<{ dayId: string }>();
   const router = useRouter();
+  const theme = useTheme();
   const [day, setDay] = useState<DayData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -118,7 +120,7 @@ export default function ProgramDayDetailScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" color="#3c87f7" />
+        <ActivityIndicator size="large" color={theme.accent} />
       </ThemedView>
     );
   }
@@ -126,10 +128,10 @@ export default function ProgramDayDetailScreen() {
   if (!day) {
     return (
       <ThemedView style={styles.centered}>
-        <ThemedText type="subtitle" style={styles.errorTitle}>
+        <ThemedText type="headlineMedium" style={styles.errorTitle}>
           Day Not Found
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="bodyMedium" themeColor="textSecondary">
           This program day could not be loaded.
         </ThemedText>
       </ThemedView>
@@ -144,29 +146,29 @@ export default function ProgramDayDetailScreen() {
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <ThemedText style={styles.programLabel}>
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '500' }}>
             {day.programs?.name || 'Program'}
           </ThemedText>
-          <ThemedText type="subtitle" style={styles.dayTitle}>
+          <ThemedText type="headlineMedium">
             Day {day.day_number}: {day.name}
           </ThemedText>
-          <ThemedText style={styles.exerciseCount}>
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
             {sortedItems.length} exercise{sortedItems.length !== 1 ? 's' : ''}
           </ThemedText>
         </View>
 
         {sortedItems.map((item, index) => (
-          <View key={item.id} style={styles.exerciseCard}>
+          <View key={item.id} style={[styles.exerciseCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}>
             <View style={styles.exerciseHeader}>
-              <View style={styles.orderBadge}>
+              <View style={[styles.orderBadge, { backgroundColor: theme.accent }]}>
                 <ThemedText style={styles.orderText}>{index + 1}</ThemedText>
               </View>
               <View style={styles.exerciseInfo}>
-                <ThemedText style={styles.exerciseName}>
+                <ThemedText style={{ fontWeight: '700', fontSize: 15, color: theme.text }}>
                   {item.exercises?.name || 'Unknown Exercise'}
                 </ThemedText>
                 {item.exercises?.primary_muscle_group && (
-                  <ThemedText style={styles.muscleGroup}>
+                  <ThemedText style={{ fontSize: 12, color: theme.textSecondary, textTransform: 'capitalize' }}>
                     {item.exercises.primary_muscle_group}
                   </ThemedText>
                 )}
@@ -175,31 +177,31 @@ export default function ProgramDayDetailScreen() {
 
             <View style={styles.targetRow}>
               <View style={styles.targetItem}>
-                <ThemedText style={styles.targetLabel}>Sets</ThemedText>
-                <ThemedText style={styles.targetValue}>{item.target_sets}</ThemedText>
+                <ThemedText style={{ fontSize: 11, color: theme.textSecondary, fontWeight: '500', textTransform: 'uppercase' }}>Sets</ThemedText>
+                <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>{item.target_sets}</ThemedText>
               </View>
               <View style={styles.targetItem}>
-                <ThemedText style={styles.targetLabel}>Reps</ThemedText>
-                <ThemedText style={styles.targetValue}>{item.target_reps}</ThemedText>
+                <ThemedText style={{ fontSize: 11, color: theme.textSecondary, fontWeight: '500', textTransform: 'uppercase' }}>Reps</ThemedText>
+                <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>{item.target_reps}</ThemedText>
               </View>
               {item.target_weight != null && (
                 <View style={styles.targetItem}>
-                  <ThemedText style={styles.targetLabel}>Weight</ThemedText>
-                  <ThemedText style={styles.targetValue}>{item.target_weight}kg</ThemedText>
+                  <ThemedText style={{ fontSize: 11, color: theme.textSecondary, fontWeight: '500', textTransform: 'uppercase' }}>Weight</ThemedText>
+                  <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>{item.target_weight}kg</ThemedText>
                 </View>
               )}
               {item.target_rpe != null && (
                 <View style={styles.targetItem}>
-                  <ThemedText style={styles.targetLabel}>RPE</ThemedText>
-                  <ThemedText style={styles.targetValue}>{item.target_rpe}</ThemedText>
+                  <ThemedText style={{ fontSize: 11, color: theme.textSecondary, fontWeight: '500', textTransform: 'uppercase' }}>RPE</ThemedText>
+                  <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.text }}>{item.target_rpe}</ThemedText>
                 </View>
               )}
             </View>
 
             {item.timer_config && formatTimerConfig(item.timer_config) && (
-              <View style={styles.timerRow}>
+              <View style={[styles.timerRow, { backgroundColor: theme.timerBackground, borderColor: theme.timerBorder }]}>
                 <ThemedText style={styles.timerIcon}>⏱</ThemedText>
-                <ThemedText style={styles.timerText}>
+                <ThemedText style={{ fontSize: 13, color: theme.timerText, fontWeight: '500' }}>
                   {formatTimerConfig(item.timer_config)}
                 </ThemedText>
               </View>
@@ -207,15 +209,15 @@ export default function ProgramDayDetailScreen() {
 
             {item.notes && (
               <View style={styles.notesRow}>
-                <ThemedText style={styles.notesLabel}>Notes:</ThemedText>
-                <ThemedText style={styles.notesText}>{item.notes}</ThemedText>
+                <ThemedText style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>Notes:</ThemedText>
+                <ThemedText style={{ fontSize: 13, color: theme.text, lineHeight: 18 }}>{item.notes}</ThemedText>
               </View>
             )}
           </View>
         ))}
 
         <Pressable
-          style={styles.startButton}
+          style={[styles.startButton, { backgroundColor: theme.accent }]}
           onPress={() => router.push(`/(tabs)/session/${dayId}`)}
           accessibilityRole="button"
           accessibilityLabel={`Start session for Day ${day.day_number}`}
@@ -244,26 +246,12 @@ const styles = StyleSheet.create({
   header: {
     gap: Spacing.one,
   },
-  programLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  dayTitle: {
-    fontSize: 22,
-  },
-  exerciseCount: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
   errorTitle: {
-    fontSize: 22,
     marginBottom: Spacing.two,
   },
   exerciseCard: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderRadius: Radii.large,
     padding: Spacing.three,
     gap: Spacing.two,
   },
@@ -276,7 +264,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#3c87f7',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -289,16 +276,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  exerciseName: {
-    fontWeight: '700',
-    fontSize: 15,
-    color: '#1f2937',
-  },
-  muscleGroup: {
-    fontSize: 12,
-    color: '#6b7280',
-    textTransform: 'capitalize',
-  },
   targetRow: {
     flexDirection: 'row',
     gap: Spacing.three,
@@ -308,55 +285,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
-  targetLabel: {
-    fontSize: 11,
-    color: '#6b7280',
-    fontWeight: '500',
-    textTransform: 'uppercase',
-  },
-  targetValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1f2937',
-  },
   timerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
-    paddingLeft: 36,
-    backgroundColor: '#f0f9ff',
     padding: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     marginLeft: 36,
+    borderWidth: 1,
   },
   timerIcon: {
     fontSize: 14,
-  },
-  timerText: {
-    fontSize: 13,
-    color: '#0369a1',
-    fontWeight: '500',
   },
   notesRow: {
     paddingLeft: 36,
     gap: 2,
   },
-  notesLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  notesText: {
-    fontSize: 13,
-    color: '#374151',
-    lineHeight: 18,
-  },
   startButton: {
-    backgroundColor: '#3c87f7',
     paddingVertical: Spacing.three,
-    borderRadius: 12,
+    borderRadius: Radii.large,
     alignItems: 'center',
     marginTop: Spacing.two,
+    minHeight: 48,
+    justifyContent: 'center',
   },
   startButtonText: {
     color: '#fff',

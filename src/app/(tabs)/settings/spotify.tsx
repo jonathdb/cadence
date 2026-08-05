@@ -10,7 +10,8 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } fro
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     connectSpotify,
@@ -20,6 +21,7 @@ import {
 
 export default function SpotifyScreen() {
   const { session } = useAuth();
+  const theme = useTheme();
   const [isConnected, setIsConnected] = useState(false);
   const [scopes, setScopes] = useState<string[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,16 +114,16 @@ export default function SpotifyScreen() {
         </View>
 
         {error && (
-          <View style={styles.errorContainer}>
-            <ThemedText style={styles.errorText}>{error}</ThemedText>
+          <View style={[styles.errorContainer, { backgroundColor: theme.errorSoft }]}>
+            <ThemedText style={[styles.errorText, { color: theme.error }]}>{error}</ThemedText>
           </View>
         )}
 
         {/* Connection Status */}
-        <View style={styles.statusCard}>
+        <View style={[styles.statusCard, { backgroundColor: theme.backgroundElement }]}>
           <View style={styles.statusRow}>
             <ThemedText style={styles.statusLabel}>Status</ThemedText>
-            <ThemedText style={isConnected ? styles.statusConnected : styles.statusDisconnected}>
+            <ThemedText style={[isConnected ? styles.statusConnected : styles.statusDisconnected, { color: isConnected ? theme.success : theme.textSecondary }]}>
               {isConnected ? 'Connected' : 'Not connected'}
             </ThemedText>
           </View>
@@ -140,7 +142,7 @@ export default function SpotifyScreen() {
         <View style={styles.section}>
           {isConnected ? (
             <Pressable
-              style={[styles.disconnectButton, isProcessing && styles.buttonDisabled]}
+              style={[styles.disconnectButton, { backgroundColor: theme.error }, isProcessing && styles.buttonDisabled]}
               onPress={handleDisconnect}
               disabled={isProcessing}
               accessibilityRole="button"
@@ -154,7 +156,7 @@ export default function SpotifyScreen() {
             </Pressable>
           ) : (
             <Pressable
-              style={[styles.connectButton, isProcessing && styles.buttonDisabled]}
+              style={[styles.connectButton, { backgroundColor: theme.success }, isProcessing && styles.buttonDisabled]}
               onPress={handleConnect}
               disabled={isProcessing}
               accessibilityRole="button"
@@ -190,19 +192,16 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   errorContainer: {
-    backgroundColor: '#fee2e2',
     padding: Spacing.two,
-    borderRadius: 8,
+    borderRadius: Radii.medium,
   },
   errorText: {
     fontSize: 14,
-    color: '#dc2626',
     textAlign: 'center',
   },
   statusCard: {
     padding: Spacing.three,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: Radii.medium,
     gap: Spacing.two,
   },
   statusRow: {
@@ -215,23 +214,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   statusConnected: {
-    color: '#16a34a',
     fontWeight: '600',
   },
   statusDisconnected: {
-    color: '#6b7280',
   },
   connectButton: {
-    backgroundColor: '#1DB954',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two + 4,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   disconnectButton: {
-    backgroundColor: '#ef4444',
-    borderRadius: 8,
+    borderRadius: Radii.medium,
     padding: Spacing.two + 4,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,
