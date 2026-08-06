@@ -200,6 +200,9 @@ export function StoreIntegrationProvider({ children }: { children: React.ReactNo
 
   // ── Sync Engine Initialization & NetInfo Connectivity Listener ─────────────
   useEffect(() => {
+    // Sync Engine requires expo-sqlite (WAL) — skip on web
+    if (Platform.OS === 'web') return;
+
     if (!userId || !session) {
       // Cleanup sync engine and NetInfo listener when signed out
       if (netInfoUnsubscribeRef.current) {
