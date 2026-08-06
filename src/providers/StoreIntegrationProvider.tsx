@@ -15,6 +15,7 @@
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { type RealtimeChannel } from '@supabase/supabase-js';
 import React, { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 
 import { useAuth } from '@/providers/AuthProvider';
 import { getSyncEngine, initSyncEngine, resetSyncEngine } from '@/services/sync-engine';
