@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 describe('Auth module', () => {
   describe('Database type placeholder', () => {
     it('should export a valid Database type structure', async () => {
-      const { Database } = await import('@/types/database') as any;
+      const { Database } = await import('@/types/database.generated') as any;
       // The Database type is a type-only export, so we verify the module loads
       // without error. The type itself is validated at compile-time.
       expect(true).toBe(true);

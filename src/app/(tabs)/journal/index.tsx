@@ -22,7 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { Database } from '@/types/database';
+import { Database } from '@/types/database.generated';
 
 type JournalEntry = Database['public']['Tables']['journal_entries']['Row'];
 

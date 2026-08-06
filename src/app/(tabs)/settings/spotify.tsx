@@ -1,9 +1,9 @@
 /**
  * Spotify connect/disconnect screen.
- * Shows connection status and allows users to connect or disconnect Spotify.
- * Uses the spotify auth service.
+ * Shows connection status, account name, and allows users to connect or disconnect Spotify.
+ * Uses the spotify auth service with OAuth2 PKCE flow.
  *
- * Requirements: 25.1
+ * Requirements: 25.1, 25.2, 25.3, 25.4, 25.5, 25.6
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -24,6 +24,7 @@ export default function SpotifyScreen() {
   const theme = useTheme();
   const [isConnected, setIsConnected] = useState(false);
   const [scopes, setScopes] = useState<string[] | null>(null);
+  const [accountName, setAccountName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export default function SpotifyScreen() {
       const status = await getSpotifyConnectionStatus(session.user.id);
       setIsConnected(status.connected);
       setScopes(status.scopes);
+      setAccountName(status.accountName);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Spotify status');
@@ -56,6 +58,11 @@ export default function SpotifyScreen() {
       if (result) {
         setIsConnected(true);
         setScopes(result.scopes);
+        // Reload status to get account name from Spotify /me endpoint
+        if (session?.user.id) {
+          const status = await getSpotifyConnectionStatus(session.user.id);
+          setAccountName(status.accountName);
+        }
       }
       // null result means user cancelled — no error
     } catch (err) {
@@ -84,6 +91,7 @@ export default function SpotifyScreen() {
               await disconnectSpotify(session.user.id);
               setIsConnected(false);
               setScopes(null);
+              setAccountName(null);
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Failed to disconnect Spotify');
             } finally {
@@ -98,7 +106,7 @@ export default function SpotifyScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.centered}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" accessibilityLabel="Loading Spotify connection status" />
       </ThemedView>
     );
   }
@@ -123,15 +131,29 @@ export default function SpotifyScreen() {
         <View style={[styles.statusCard, { backgroundColor: theme.backgroundElement }]}>
           <View style={styles.statusRow}>
             <ThemedText style={styles.statusLabel}>Status</ThemedText>
-            <ThemedText style={[isConnected ? styles.statusConnected : styles.statusDisconnected, { color: isConnected ? theme.success : theme.textSecondary }]}>
+            <ThemedText
+              style={[
+                isConnected ? styles.statusConnected : styles.statusDisconnected,
+                { color: isConnected ? theme.success : theme.textSecondary },
+              ]}
+            >
               {isConnected ? 'Connected' : 'Not connected'}
             </ThemedText>
           </View>
 
-          {isConnected && scopes && scopes.length > 0 && (
+          {isConnected && accountName && (
             <View style={styles.statusRow}>
+              <ThemedText style={styles.statusLabel}>Account</ThemedText>
+              <ThemedText type="small" themeColor="text">
+                {accountName}
+              </ThemedText>
+            </View>
+          )}
+
+          {isConnected && scopes && scopes.length > 0 && (
+            <View style={styles.scopesSection}>
               <ThemedText style={styles.statusLabel}>Scopes</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="textSecondary" style={styles.scopesText}>
                 {scopes.join(', ')}
               </ThemedText>
             </View>
@@ -216,7 +238,12 @@ const styles = StyleSheet.create({
   statusConnected: {
     fontWeight: '600',
   },
-  statusDisconnected: {
+  statusDisconnected: {},
+  scopesSection: {
+    gap: Spacing.one,
+  },
+  scopesText: {
+    marginTop: 2,
   },
   connectButton: {
     borderRadius: Radii.medium,

@@ -24,8 +24,9 @@ export default function SessionLayout() {
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="[dayId]" options={{ title: 'Session' }} />
+      <Stack.Screen name="freestyle" options={{ title: 'Freestyle Session' }} />
       <Stack.Screen name="route" options={{ title: 'Track Route' }} />
-      <Stack.Screen name="summary" options={{ title: 'Session Summary', headerBackVisible: false }} />
+      <Stack.Screen name="summary" options={{ headerShown: false }} />
     </Stack>
   );
 }

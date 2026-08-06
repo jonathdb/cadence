@@ -1,8 +1,9 @@
 /**
  * Progress tab layout — uses a Stack navigator for nested screens.
  * index.tsx = main progression dashboard
+ * exercise/[exerciseId].tsx = per-exercise history screen
  *
- * Requirements: 21.1, 21.2, 21.3
+ * Requirements: 12.1, 12.2, 12.3, 12.4, 21.1, 21.2, 21.3
  */
 import { Stack } from 'expo-router';
 import { useColorScheme } from 'react-native';
@@ -21,6 +22,10 @@ export default function ProgressLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="exercise/[exerciseId]"
+        options={{ title: 'Exercise History' }}
+      />
     </Stack>
   );
 }

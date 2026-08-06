@@ -216,7 +216,7 @@ async function deleteUserData(userId: string): Promise<{ error?: string }> {
     return { error: `Failed to delete personal_records: ${prError.message}` };
   }
 
-  // 4j–4q. Tables with direct user_id FK (no child dependencies at this point)
+  // 4j–4r. Tables with direct user_id FK (no child dependencies at this point)
   const directTables = [
     'audit_log',
     'chat_messages',
@@ -228,6 +228,7 @@ async function deleteUserData(userId: string): Promise<{ error?: string }> {
     'imported_heart_rate_summaries',
     'user_api_keys',
     'user_spotify_tokens',
+    'user_entitlements',
     'user_settings',
     'routes',
   ];
@@ -268,7 +269,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Delete all user-owned data
   const deleteResult = await deleteUserData(userId);
   if (deleteResult.error) {
-    return errorResponse(500, 'deletion_failed', deleteResult.error);
+    // Log internally but never expose database details to client (Req 28.4)
+    console.error('Account deletion failed:', deleteResult.error);
+    return errorResponse(500, 'deletion_failed', 'Account deletion failed. Please try again or contact support.');
   }
 
   // Delete the auth user via Supabase Admin API

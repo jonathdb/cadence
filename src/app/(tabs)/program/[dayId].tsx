@@ -36,6 +36,7 @@ interface DayItemData {
   target_rpe: number | null;
   timer_config: Record<string, unknown> | null;
   notes: string | null;
+  exercise_id: string | null;
   exercises: ExerciseData | null;
 }
 
@@ -94,6 +95,7 @@ export default function ProgramDayDetailScreen() {
             target_rpe,
             timer_config,
             notes,
+            exercise_id,
             exercises (name, primary_muscle_group)
           )
         `)
@@ -158,7 +160,17 @@ export default function ProgramDayDetailScreen() {
         </View>
 
         {sortedItems.map((item, index) => (
-          <View key={item.id} style={[styles.exerciseCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}>
+          <Pressable
+            key={item.id}
+            style={[styles.exerciseCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}
+            onPress={() => {
+              if (item.exercise_id) {
+                router.push(`/(tabs)/progress/exercise/${item.exercise_id}`);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`View history for ${item.exercises?.name || 'exercise'}`}
+          >
             <View style={styles.exerciseHeader}>
               <View style={[styles.orderBadge, { backgroundColor: theme.accent }]}>
                 <ThemedText style={styles.orderText}>{index + 1}</ThemedText>
@@ -213,7 +225,7 @@ export default function ProgramDayDetailScreen() {
                 <ThemedText style={{ fontSize: 13, color: theme.text, lineHeight: 18 }}>{item.notes}</ThemedText>
               </View>
             )}
-          </View>
+          </Pressable>
         ))}
 
         <Pressable

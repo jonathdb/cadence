@@ -1,7 +1,7 @@
 /**
  * Unit tests for the Spotify auth service (client-side OAuth2 PKCE flow).
  *
- * Validates: Requirements 25.1, 25.2, 25.3
+ * Validates: Requirements 25.1, 25.2, 25.3, 25.4, 25.5, 25.6
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,6 +41,10 @@ vi.mock('@/utils/supabase', () => ({
   },
 }));
 
+// --- Mock global fetch for Spotify API calls ---
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
+
 // --- Set environment variable ---
 vi.stubEnv('EXPO_PUBLIC_SPOTIFY_CLIENT_ID', 'test-spotify-client-id');
 
@@ -48,7 +52,17 @@ import {
     connectSpotify,
     disconnectSpotify,
     getSpotifyConnectionStatus,
+    refreshSpotifyToken,
 } from '@/services/spotify';
+
+const EXPECTED_SCOPES = [
+  'user-read-playback-state',
+  'user-modify-playback-state',
+  'user-read-currently-playing',
+  'playlist-read-private',
+  'playlist-modify-public',
+  'playlist-modify-private',
+];
 
 describe('Spotify Auth Service', () => {
   const userId = 'user-spotify-test-123';
@@ -57,6 +71,10 @@ describe('Spotify Auth Service', () => {
     vi.clearAllMocks();
     mockGetUser.mockResolvedValue({
       data: { user: { id: userId } },
+    });
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
     });
   });
 
@@ -100,24 +118,16 @@ describe('Spotify Auth Service', () => {
       expect(result!.access_token).toBe('access-token-123');
       expect(result!.refresh_token).toBe('refresh-token-456');
       expect(result!.expires_at).toBe(1000000 + 3600);
-      expect(result!.scopes).toEqual([
-        'playlist-read-private',
-        'playlist-modify-public',
-        'playlist-modify-private',
-      ]);
+      expect(result!.scopes).toEqual(EXPECTED_SCOPES);
 
-      // Verify tokens were stored in Supabase
+      // Verify tokens were stored in Supabase with correct column names
       expect(mockFrom).toHaveBeenCalledWith('user_spotify_tokens');
       expect(mockUpsert).toHaveBeenCalledWith(
         expect.objectContaining({
           user_id: userId,
-          access_token_encrypted: 'access-token-123',
-          refresh_token_encrypted: 'refresh-token-456',
-          scopes: [
-            'playlist-read-private',
-            'playlist-modify-public',
-            'playlist-modify-private',
-          ],
+          access_token: 'access-token-123',
+          refresh_token: 'refresh-token-456',
+          scopes: EXPECTED_SCOPES,
         }),
         { onConflict: 'user_id' }
       );
@@ -158,13 +168,12 @@ describe('Spotify Auth Service', () => {
       );
     });
 
-    it('should request only the required scopes (Req 25.2)', async () => {
+    it('should request all required scopes including playback control (Req 25.2)', async () => {
       mockPromptAsync.mockResolvedValue({ type: 'cancel' });
 
       await connectSpotify();
 
       // The AuthRequest constructor is called with the correct scopes
-      // We verify via the mockPromptAsync being called (which means AuthRequest was created)
       expect(mockMakeRedirectUri).toHaveBeenCalledWith({
         scheme: 'cadence',
         path: 'spotify-callback',
@@ -220,7 +229,7 @@ describe('Spotify Auth Service', () => {
   });
 
   describe('disconnectSpotify', () => {
-    it('should revoke tokens and delete from DB (Req 25.3)', async () => {
+    it('should revoke tokens and delete from DB (Req 25.6)', async () => {
       const mockDelete = vi.fn().mockReturnValue({
         eq: vi.fn().mockResolvedValue({ error: null }),
       });
@@ -232,8 +241,8 @@ describe('Spotify Auth Service', () => {
               eq: vi.fn().mockReturnValue({
                 maybeSingle: vi.fn().mockResolvedValue({
                   data: {
-                    access_token_encrypted: 'stored-access-token',
-                    refresh_token_encrypted: 'stored-refresh-token',
+                    access_token: 'stored-access-token',
+                    refresh_token: 'stored-refresh-token',
                   },
                   error: null,
                 }),
@@ -274,8 +283,8 @@ describe('Spotify Auth Service', () => {
               eq: vi.fn().mockReturnValue({
                 maybeSingle: vi.fn().mockResolvedValue({
                   data: {
-                    access_token_encrypted: 'stored-access-token',
-                    refresh_token_encrypted: 'stored-refresh-token',
+                    access_token: 'stored-access-token',
+                    refresh_token: 'stored-refresh-token',
                   },
                   error: null,
                 }),
@@ -337,8 +346,8 @@ describe('Spotify Auth Service', () => {
               eq: vi.fn().mockReturnValue({
                 maybeSingle: vi.fn().mockResolvedValue({
                   data: {
-                    access_token_encrypted: 'at',
-                    refresh_token_encrypted: 'rt',
+                    access_token: 'at',
+                    refresh_token: 'rt',
                   },
                   error: null,
                 }),
@@ -380,9 +389,10 @@ describe('Spotify Auth Service', () => {
       expect(status.connected).toBe(false);
       expect(status.expiresAt).toBeNull();
       expect(status.scopes).toBeNull();
+      expect(status.accountName).toBeNull();
     });
 
-    it('should return connected=true when tokens exist and not expired', async () => {
+    it('should return connected=true with account name when tokens exist and not expired', async () => {
       const futureDate = new Date(Date.now() + 3600_000).toISOString();
 
       mockFrom.mockReturnValue({
@@ -390,9 +400,10 @@ describe('Spotify Auth Service', () => {
           eq: vi.fn().mockReturnValue({
             maybeSingle: vi.fn().mockResolvedValue({
               data: {
+                access_token: 'valid-access-token',
+                refresh_token: 'rt',
                 expires_at: futureDate,
                 scopes: ['playlist-read-private'],
-                refresh_token_encrypted: 'rt',
               },
               error: null,
             }),
@@ -400,10 +411,17 @@ describe('Spotify Auth Service', () => {
         }),
       });
 
+      // Mock the /me endpoint call
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ display_name: 'John Doe', id: 'johndoe123' }),
+      });
+
       const status = await getSpotifyConnectionStatus(userId);
 
       expect(status.connected).toBe(true);
       expect(status.scopes).toEqual(['playlist-read-private']);
+      expect(status.accountName).toBe('John Doe');
     });
 
     it('should return connected=true when expired but has refresh token', async () => {
@@ -414,9 +432,10 @@ describe('Spotify Auth Service', () => {
           eq: vi.fn().mockReturnValue({
             maybeSingle: vi.fn().mockResolvedValue({
               data: {
+                access_token: 'expired-token',
+                refresh_token: 'valid-refresh',
                 expires_at: pastDate,
                 scopes: ['playlist-modify-public'],
-                refresh_token_encrypted: 'valid-refresh',
               },
               error: null,
             }),
@@ -424,10 +443,17 @@ describe('Spotify Auth Service', () => {
         }),
       });
 
+      // Mock /me endpoint — might fail with expired token, returns null accountName
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+      });
+
       const status = await getSpotifyConnectionStatus(userId);
 
       // Still connected because refresh token can renew server-side
       expect(status.connected).toBe(true);
+      expect(status.accountName).toBeNull();
     });
 
     it('should return connected=false when expired and no refresh token', async () => {
@@ -438,9 +464,10 @@ describe('Spotify Auth Service', () => {
           eq: vi.fn().mockReturnValue({
             maybeSingle: vi.fn().mockResolvedValue({
               data: {
+                access_token: 'expired-token',
+                refresh_token: '',
                 expires_at: pastDate,
                 scopes: ['playlist-modify-public'],
-                refresh_token_encrypted: null,
               },
               error: null,
             }),
@@ -468,6 +495,190 @@ describe('Spotify Auth Service', () => {
       await expect(getSpotifyConnectionStatus(userId)).rejects.toThrow(
         'Failed to check Spotify connection'
       );
+    });
+
+    it('should fall back to Spotify id if display_name is null', async () => {
+      const futureDate = new Date(Date.now() + 3600_000).toISOString();
+
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: {
+                access_token: 'valid-access-token',
+                refresh_token: 'rt',
+                expires_at: futureDate,
+                scopes: ['playlist-read-private'],
+              },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ display_name: null, id: 'spotify_user_42' }),
+      });
+
+      const status = await getSpotifyConnectionStatus(userId);
+
+      expect(status.accountName).toBe('spotify_user_42');
+    });
+  });
+
+  describe('refreshSpotifyToken', () => {
+    it('should return existing token if not expired (Req 25.3)', async () => {
+      const futureDate = new Date(Date.now() + 3600_000).toISOString();
+
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: {
+                access_token: 'still-valid-token',
+                refresh_token: 'rt',
+                expires_at: futureDate,
+              },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const token = await refreshSpotifyToken(userId);
+
+      expect(token).toBe('still-valid-token');
+      // Should not have called fetch for token refresh
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should refresh token when expired and return new access token (Req 25.3)', async () => {
+      const pastDate = new Date(Date.now() - 3600_000).toISOString();
+
+      const mockUpdate = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'user_spotify_tokens') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    access_token: 'expired-token',
+                    refresh_token: 'valid-refresh-token',
+                    expires_at: pastDate,
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+            update: mockUpdate,
+          };
+        }
+        return {};
+      });
+
+      // Mock Spotify token endpoint response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600,
+        }),
+      });
+
+      const token = await refreshSpotifyToken(userId);
+
+      expect(token).toBe('new-access-token');
+      expect(mockUpdate).toHaveBeenCalled();
+    });
+
+    it('should clear tokens and return null when refresh fails (revoked) (Req 25.4)', async () => {
+      const pastDate = new Date(Date.now() - 3600_000).toISOString();
+
+      const mockDelete = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'user_spotify_tokens') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    access_token: 'expired-token',
+                    refresh_token: 'revoked-refresh-token',
+                    expires_at: pastDate,
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+            delete: mockDelete,
+          };
+        }
+        return {};
+      });
+
+      // Mock Spotify token endpoint returning 400 (refresh token revoked)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+      });
+
+      const token = await refreshSpotifyToken(userId);
+
+      expect(token).toBeNull();
+      // Should have cleared tokens from DB
+      expect(mockDelete).toHaveBeenCalled();
+    });
+
+    it('should return null when no tokens exist', async () => {
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: null,
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const token = await refreshSpotifyToken(userId);
+
+      expect(token).toBeNull();
+    });
+
+    it('should return null on network error without clearing tokens', async () => {
+      const pastDate = new Date(Date.now() - 3600_000).toISOString();
+
+      mockFrom.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: {
+                access_token: 'expired-token',
+                refresh_token: 'refresh-token',
+                expires_at: pastDate,
+              },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      // Simulate network failure
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const token = await refreshSpotifyToken(userId);
+
+      expect(token).toBeNull();
     });
   });
 });

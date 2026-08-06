@@ -238,8 +238,8 @@ export default function SessionSummaryScreen() {
         </View>
 
         {/* Stats Grid */}
-        <View style={styles.statsGrid}>
-          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
+        <View style={styles.statsGrid} accessibilityRole="summary" accessibilityLabel={`Session stats: Duration ${formatDuration(totalDurationSeconds)}, ${totalSets} sets, estimated volume ${formatVolume(totalVolume)}`}>
+          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]} accessibilityLabel={`Duration: ${formatDuration(totalDurationSeconds)}`}>
             <ThemedText type="bodySmall" themeColor="textSecondary">
               Duration
             </ThemedText>
@@ -248,14 +248,14 @@ export default function SessionSummaryScreen() {
             </ThemedText>
           </View>
 
-          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]} accessibilityLabel={`Total sets: ${totalSets}`}>
             <ThemedText type="bodySmall" themeColor="textSecondary">
               Total Sets
             </ThemedText>
             <ThemedText type="monoMedium">{totalSets}</ThemedText>
           </View>
 
-          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
+          <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]} accessibilityLabel={`Estimated volume: ${formatVolume(totalVolume)}`}>
             <ThemedText type="bodySmall" themeColor="textSecondary">
               Est. Volume
             </ThemedText>
@@ -265,10 +265,10 @@ export default function SessionSummaryScreen() {
 
         {/* PRs Section — hidden when no PRs achieved (Requirement 11.2) */}
         {hasPRs && (
-          <View style={styles.prSection}>
-            <ThemedText type="headlineSmall">🏆 Personal Records</ThemedText>
+          <View style={styles.prSection} accessibilityRole="list" accessibilityLabel={`${prs.length} personal record${prs.length !== 1 ? 's' : ''} achieved`}>
+            <ThemedText type="headlineSmall" accessibilityRole="header">🏆 Personal Records</ThemedText>
             {prs.map((pr, index) => (
-              <View key={`${pr.exerciseName}-${pr.prType}-${index}`} style={[styles.prRow, { borderBottomColor: theme.border }]}>
+              <View key={`${pr.exerciseName}-${pr.prType}-${index}`} style={[styles.prRow, { borderBottomColor: theme.border }]} accessibilityLabel={`${pr.exerciseName}: ${formatPRType(pr.prType)} — ${pr.prType === 'reps_at_weight' ? `${pr.value} reps` : `${pr.value} kg`}`}>
                 <View style={styles.prInfo}>
                   <ThemedText style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{pr.exerciseName}</ThemedText>
                   <ThemedText type="bodySmall" themeColor="textSecondary">

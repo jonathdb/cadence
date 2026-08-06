@@ -1,23 +1,28 @@
 /**
  * Main settings hub screen.
  * Shows user email, sign-out button, and navigation links to sub-screens:
- * API Keys, Permissions, Spotify, Health.
+ * API Keys, Permissions, Spotify, Health (native only).
+ * Includes inline toggles for session preferences (rest timer auto-start).
  *
- * Requirements: 3.1, 23.1, 25.1, 12.1
+ * Requirements: 3.1, 15.2, 15.3, 23.1, 23.2, 23.3, 25.1, 12.1
  */
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import { useAuth } from '@/providers/AuthProvider';
 
 interface SettingsLink {
   label: string;
   description: string;
   route: '/(tabs)/settings/api-keys' | '/(tabs)/settings/permissions' | '/(tabs)/settings/spotify' | '/(tabs)/settings/health' | '/(tabs)/settings/audit-log';
+  /** If set, only show this link when the given capability is available */
+  requiresCapability?: 'health' | 'notifications' | 'gps' | 'biometrics';
 }
 
 const SETTINGS_LINKS: SettingsLink[] = [
@@ -40,6 +45,7 @@ const SETTINGS_LINKS: SettingsLink[] = [
     label: 'Health',
     description: 'Connect HealthKit or Health Connect',
     route: '/(tabs)/settings/health',
+    requiresCapability: 'health',
   },
   {
     label: 'Audit Log',
@@ -52,6 +58,14 @@ export default function SettingsIndexScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
   const theme = useTheme();
+  const { settings, updateSetting } = useUserSettings();
+  const capabilities = usePlatformCapabilities();
+
+  // Filter settings links based on platform capabilities (Req 23.2, 23.3)
+  const visibleLinks = SETTINGS_LINKS.filter((link) => {
+    if (!link.requiresCapability) return true;
+    return capabilities[link.requiresCapability];
+  });
 
   return (
     <ThemedView style={styles.container}>
@@ -70,12 +84,34 @@ export default function SettingsIndexScreen() {
           </View>
         </View>
 
+        {/* Session Preferences (Req 15.2, 15.3) */}
+        <View style={styles.section}>
+          <ThemedText type="labelMedium" themeColor="textSecondary">
+            SESSION
+          </ThemedText>
+          <View style={[styles.toggleCard, { backgroundColor: theme.backgroundElement }]}>
+            <View style={styles.toggleContent}>
+              <ThemedText style={styles.toggleLabel}>Rest Timer Auto-Start</ThemedText>
+              <ThemedText type="bodySmall" themeColor="textSecondary">
+                Automatically start the rest timer after logging a set
+              </ThemedText>
+            </View>
+            <Switch
+              value={settings.rest_timer_auto_start}
+              onValueChange={(value) => updateSetting('rest_timer_auto_start', value)}
+              trackColor={{ false: theme.border, true: theme.accent }}
+              accessibilityLabel="Toggle rest timer auto-start"
+              accessibilityRole="switch"
+            />
+          </View>
+        </View>
+
         {/* Navigation Links */}
         <View style={styles.section}>
           <ThemedText type="labelMedium" themeColor="textSecondary">
             CONFIGURATION
           </ThemedText>
-          {SETTINGS_LINKS.map((link) => (
+          {visibleLinks.map((link) => (
             <Pressable
               key={link.route}
               style={[styles.linkCard, { backgroundColor: theme.backgroundElement }]}
@@ -139,6 +175,20 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   linkLabel: {
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  toggleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.three,
+    borderRadius: Radii.medium,
+  },
+  toggleContent: {
+    flex: 1,
+    gap: 2,
+  },
+  toggleLabel: {
     fontWeight: '600',
     fontSize: 16,
   },

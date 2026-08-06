@@ -1,4 +1,4 @@
-import { Database } from '@/types/database';
+import { Database } from '@/types/database.generated';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 

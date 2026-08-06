@@ -7,17 +7,12 @@
  * Responsibilities:
  * - Initiate Spotify OAuth2 PKCE authorization
  * - Exchange authorization code for tokens
- * - Store tokens encrypted in Supabase (user_spotify_tokens table)
- * - Check connection status
+ * - Store tokens in Supabase (user_spotify_tokens table)
+ * - Check connection status and fetch account name
  * - Disconnect: revoke tokens via Spotify API, delete from DB
+ * - Client-side token refresh logic with revocation handling
  *
- * Token refresh is handled server-side in Edge Functions — this service
- * handles only the initial auth flow and disconnect.
- *
- * Scopes requested (phase 1):
- * - playlist-read-private
- * - playlist-modify-public
- * - playlist-modify-private
+ * Requirements: 25.1, 25.2, 25.3, 25.4, 25.5, 25.6
  */
 
 import {
@@ -49,10 +44,14 @@ const SPOTIFY_DISCOVERY = {
 };
 
 /**
- * The scopes required for Cadence's playlist management features.
- * Kept minimal per requirement 25.2.
+ * All scopes required for Cadence's Spotify integration:
+ * - Playback control: user-read-playback-state, user-modify-playback-state, user-read-currently-playing
+ * - Playlist management: playlist-read-private, playlist-modify-public, playlist-modify-private
  */
 const SPOTIFY_SCOPES = [
+  'user-read-playback-state',
+  'user-modify-playback-state',
+  'user-read-currently-playing',
   'playlist-read-private',
   'playlist-modify-public',
   'playlist-modify-private',
@@ -138,6 +137,8 @@ export async function connectSpotify(): Promise<SpotifyAuth | null> {
  * Revokes tokens via Spotify's revocation endpoint, then deletes
  * the token record from Supabase.
  *
+ * Requirements: 25.6
+ *
  * @param userId - The user's ID
  * @throws Error if revocation or deletion fails
  */
@@ -145,7 +146,7 @@ export async function disconnectSpotify(userId: string): Promise<void> {
   // Retrieve stored tokens for revocation
   const { data, error: fetchError } = await supabase
     .from('user_spotify_tokens')
-    .select('access_token_encrypted, refresh_token_encrypted')
+    .select('access_token, refresh_token')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -160,7 +161,7 @@ export async function disconnectSpotify(userId: string): Promise<void> {
 
   // Attempt to revoke the refresh token (preferred) or access token
   // Spotify may not support revocation for all token types, but we try.
-  const tokenToRevoke = data.refresh_token_encrypted || data.access_token_encrypted;
+  const tokenToRevoke = data.refresh_token || data.access_token;
 
   if (tokenToRevoke) {
     try {
@@ -168,7 +169,7 @@ export async function disconnectSpotify(userId: string): Promise<void> {
         {
           clientId: SPOTIFY_CLIENT_ID,
           token: tokenToRevoke,
-          tokenTypeHint: data.refresh_token_encrypted
+          tokenTypeHint: data.refresh_token
             ? TokenTypeHint.RefreshToken
             : TokenTypeHint.AccessToken,
         },
@@ -199,17 +200,20 @@ export async function disconnectSpotify(userId: string): Promise<void> {
  * access token has not expired (or a refresh token is available for
  * server-side renewal).
  *
+ * Requirements: 25.5
+ *
  * @param userId - The user's ID
- * @returns Object with `connected` boolean and optional `expiresAt` timestamp
+ * @returns Object with `connected` boolean, optional `expiresAt`, scopes, and accountName
  */
 export async function getSpotifyConnectionStatus(userId: string): Promise<{
   connected: boolean;
   expiresAt: number | null;
   scopes: string[] | null;
+  accountName: string | null;
 }> {
   const { data, error } = await supabase
     .from('user_spotify_tokens')
-    .select('expires_at, scopes, refresh_token_encrypted')
+    .select('access_token, refresh_token, expires_at, scopes')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -218,7 +222,7 @@ export async function getSpotifyConnectionStatus(userId: string): Promise<{
   }
 
   if (!data) {
-    return { connected: false, expiresAt: null, scopes: null };
+    return { connected: false, expiresAt: null, scopes: null, accountName: null };
   }
 
   // A connection is valid if either:
@@ -226,16 +230,48 @@ export async function getSpotifyConnectionStatus(userId: string): Promise<{
   // 2. A refresh token exists (Edge Functions handle refresh server-side)
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() / 1000 : null;
-  const hasRefreshToken = !!data.refresh_token_encrypted;
+  const hasRefreshToken = !!data.refresh_token;
   const isExpired = expiresAt !== null && expiresAt < now;
 
   const connected = !isExpired || hasRefreshToken;
 
+  // Fetch account name from Spotify /me endpoint if we have a valid token
+  let accountName: string | null = null;
+  if (connected && data.access_token) {
+    accountName = await fetchSpotifyAccountName(data.access_token);
+  }
+
   return {
     connected,
-    expiresAt: expiresAt,
+    expiresAt,
     scopes: data.scopes ?? null,
+    accountName,
   };
+}
+
+/**
+ * Fetches the connected Spotify account display name from the /me endpoint.
+ * Returns null if the request fails (token expired, network issue).
+ *
+ * @param accessToken - Valid Spotify access token
+ */
+async function fetchSpotifyAccountName(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch('https://api.spotify.com/v1/me', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return data.display_name ?? data.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // --- Internal Helpers ---
@@ -243,6 +279,8 @@ export async function getSpotifyConnectionStatus(userId: string): Promise<{
 /**
  * Stores Spotify tokens in the user_spotify_tokens table.
  * Upserts based on user_id to handle re-connections.
+ *
+ * Requirements: 25.2
  */
 async function storeSpotifyTokens(auth: SpotifyAuth): Promise<void> {
   const {
@@ -258,8 +296,8 @@ async function storeSpotifyTokens(auth: SpotifyAuth): Promise<void> {
     .upsert(
       {
         user_id: user.id,
-        access_token_encrypted: auth.access_token,
-        refresh_token_encrypted: auth.refresh_token,
+        access_token: auth.access_token,
+        refresh_token: auth.refresh_token,
         expires_at: new Date(auth.expires_at * 1000).toISOString(),
         scopes: auth.scopes,
       },
@@ -268,5 +306,95 @@ async function storeSpotifyTokens(auth: SpotifyAuth): Promise<void> {
 
   if (error) {
     throw new Error(`Failed to store Spotify tokens: ${error.message}`);
+  }
+}
+
+/**
+ * Refreshes the Spotify access token using the stored refresh_token.
+ *
+ * Checks if the current token has expired. If so, requests a new access_token
+ * from Spotify's token endpoint and updates the stored tokens in Supabase.
+ *
+ * If refresh fails (e.g., token revoked by user), clears stored tokens and
+ * returns null, signaling that the user needs to reconnect.
+ *
+ * Requirements: 25.3, 25.4
+ *
+ * @param userId - The user's ID
+ * @returns Valid access token, or null if reconnection is required
+ */
+export async function refreshSpotifyToken(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('user_spotify_tokens')
+    .select('access_token, refresh_token, expires_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  // Check if token is still valid
+  const expiresAt = new Date(data.expires_at).getTime();
+  const now = Date.now();
+  // Refresh if expiring within 60 seconds (buffer to avoid race conditions)
+  if (expiresAt - now > 60_000) {
+    return data.access_token;
+  }
+
+  // Token expired or about to expire — attempt refresh
+  if (!data.refresh_token) {
+    return null;
+  }
+
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: data.refresh_token,
+      client_id: SPOTIFY_CLIENT_ID,
+    });
+
+    const response = await fetch(SPOTIFY_DISCOVERY.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      // Refresh failed — token likely revoked. Clear stored tokens.
+      await supabase
+        .from('user_spotify_tokens')
+        .delete()
+        .eq('user_id', userId);
+      return null;
+    }
+
+    const tokenData = await response.json();
+    const newAccessToken = tokenData.access_token as string;
+    const expiresIn = (tokenData.expires_in as number) ?? 3600;
+    const newExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    const newRefreshToken = (tokenData.refresh_token as string) || data.refresh_token;
+
+    // Update tokens in DB
+    const { error: updateError } = await supabase
+      .from('user_spotify_tokens')
+      .update({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiresAt,
+      })
+      .eq('user_id', userId);
+
+    if (updateError) {
+      console.warn('Failed to update Spotify tokens after refresh:', updateError.message);
+      // Return the new token anyway — it's valid even if DB update failed
+    }
+
+    return newAccessToken;
+  } catch {
+    // Network error during refresh — don't clear tokens, just return null
+    return null;
   }
 }

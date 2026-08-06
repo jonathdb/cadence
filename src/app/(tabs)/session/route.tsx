@@ -2,8 +2,9 @@
  * Live route tracking screen.
  * Displays GPS tracking status, elapsed time, current distance.
  * Provides start/stop controls and shows route summary on completion.
+ * Hidden on web via platform capability detection (Req 23.2, 23.3).
  *
- * Requirements: 30.1, 30.2
+ * Requirements: 30.1, 30.2, 23.2, 23.3
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -12,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     getRouteTrackingStatus,
@@ -77,6 +79,7 @@ export default function RouteTrackingScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
   const theme = useTheme();
+  const { gps } = usePlatformCapabilities();
 
   const [phase, setPhase] = useState<TrackingPhase>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -86,6 +89,22 @@ export default function RouteTrackingScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Platform capability guard: GPS not available on web (Req 23.2)
+  if (!gps) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.centered}>
+          <ThemedText type="headlineMedium" style={styles.title}>
+            Route Tracking Unavailable
+          </ThemedText>
+          <ThemedText type="bodyMedium" themeColor="textSecondary" style={styles.description}>
+            GPS route tracking requires a native device (iOS or Android). This feature is not available on web.
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   // Poll tracking status while actively tracking
   useEffect(() => {

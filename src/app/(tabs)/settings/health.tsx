@@ -3,8 +3,9 @@
  * Shows permission status, allows connecting to HealthKit/Health Connect,
  * and provides a manual sync trigger.
  * Uses the health adapter service.
+ * Hidden on web via platform capability detection (Req 23.2, 23.3).
  *
- * Requirements: 12.1
+ * Requirements: 12.1, 23.2, 23.3
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -13,6 +14,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     getHealthConnectionStatus,
@@ -27,6 +29,8 @@ import {
 export default function HealthScreen() {
   const { session } = useAuth();
   const theme = useTheme();
+  const { health } = usePlatformCapabilities();
+
   const [available, setAvailable] = useState<boolean | null>(null);
   const [permissions, setPermissions] = useState<HealthPermissions | null>(null);
   const [provider, setProvider] = useState<string | null>(null);

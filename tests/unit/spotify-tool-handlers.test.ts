@@ -457,7 +457,7 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
         target_pace_seconds_per_km: 480,
       })) as any;
 
-      expect(result.target_bpm_range).toEqual({ min: 140, max: 155, label: 'slow jogging' });
+      expect(result.target_bpm_range).toEqual({ min: 140, max: 150, label: 'slow jogging' });
     });
   });
 });

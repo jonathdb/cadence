@@ -16,6 +16,7 @@ import {
     View,
 } from 'react-native';
 
+import { LastSessionCard } from '@/components/LastSessionCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
@@ -133,7 +134,7 @@ export default function ProgramScreen() {
         </ThemedText>
         <Pressable
           style={styles.libraryLink}
-          onPress={() => router.push('/(tabs)/program/library')}
+          onPress={() => router.push('/(tabs)/program/saved-programs')}
           accessibilityRole="button"
           accessibilityLabel="View program library"
         >
@@ -164,7 +165,7 @@ export default function ProgramScreen() {
 
         <Pressable
           style={[styles.libraryButton, { backgroundColor: theme.backgroundElement }]}
-          onPress={() => router.push('/(tabs)/program/library')}
+          onPress={() => router.push('/(tabs)/program/saved-programs')}
           accessibilityRole="button"
           accessibilityLabel="View program library"
         >
@@ -209,6 +210,7 @@ export default function ProgramScreen() {
                   +{sortedItems.length - 4} more
                 </ThemedText>
               )}
+              <LastSessionCard programDayId={day.id} />
             </Pressable>
           );
         })}

@@ -23,8 +23,10 @@ export default function ProgramLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="library" options={{ title: 'Program Library' }} />
+      <Stack.Screen name="saved-programs" options={{ title: 'Program Library' }} />
+      <Stack.Screen name="library" options={{ title: 'Exercise Library' }} />
       <Stack.Screen name="[dayId]" options={{ title: 'Day Detail' }} />
+      <Stack.Screen name="edit/[programId]" options={{ title: 'Program Editor' }} />
     </Stack>
   );
 }

@@ -22,7 +22,7 @@ interface BpmRange {
  *   - Fast running (< 300 s/km = sub-5:00): 175-185 BPM
  *   - Moderate running (300-360 s/km = 5:00-6:00): 170-180 BPM
  *   - Easy running (360-420 s/km = 6:00-7:00): 150-165 BPM
- *   - Slow running/jogging (> 420 s/km = 7:00+): 140-155 BPM
+ *   - Slow running/jogging (> 420 s/km = 7:00+): 140-150 BPM
  *   - Walking: 115-135 BPM
  *   - Cycling: 130-160 BPM (based on effort rather than cadence)
  */
@@ -51,7 +51,7 @@ function determineBpmRange(
   } else if (paceSecondsPerKm <= 420) {
     return { min: 150, max: 165, label: 'easy running' };
   } else {
-    return { min: 140, max: 155, label: 'slow jogging' };
+    return { min: 140, max: 150, label: 'slow jogging' };
   }
 }
 

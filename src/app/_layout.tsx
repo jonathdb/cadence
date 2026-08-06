@@ -8,7 +8,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
+import { StoreIntegrationProvider } from '@/providers/StoreIntegrationProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -43,10 +45,14 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <RootLayoutNav />
-      </ThemeProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <StoreIntegrationProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <RootLayoutNav />
+          </ThemeProvider>
+        </StoreIntegrationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
