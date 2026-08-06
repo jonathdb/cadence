@@ -169,6 +169,10 @@ const mockDb = {
   }),
 } as unknown as import('expo-sqlite').SQLiteDatabase;
 
+vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+}));
+
 vi.mock('expo-sqlite', () => ({
   openDatabaseSync: vi.fn(() => mockDb),
 }));

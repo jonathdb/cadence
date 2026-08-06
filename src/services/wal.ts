@@ -7,7 +7,20 @@
  *
  * Requirements: 4.1, 4.6
  */
-import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+
+// Lazy-load expo-sqlite only on native platforms to avoid web .wasm resolution errors
+let SQLite: typeof import('expo-sqlite') | null = null;
+function getSQLite(): typeof import('expo-sqlite') {
+  if (!SQLite) {
+    if (Platform.OS === 'web') {
+      throw new Error('expo-sqlite is not available on web platform');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    SQLite = require('expo-sqlite') as typeof import('expo-sqlite');
+  }
+  return SQLite;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -55,10 +68,10 @@ export class ReferentialIntegrityError extends Error {
 // ─── WAL Service ─────────────────────────────────────────────────────────────
 
 export class WALService {
-  private db: SQLite.SQLiteDatabase;
+  private db: any; // SQLite.SQLiteDatabase (lazily resolved)
   private knownSessionIds: Set<string> = new Set();
 
-  constructor(db: SQLite.SQLiteDatabase) {
+  constructor(db: any) {
     this.db = db;
   }
 
@@ -341,7 +354,12 @@ export function initWAL(): WALService {
     return walInstance;
   }
 
-  const db = SQLite.openDatabaseSync('cadence_wal.db');
+  if (Platform.OS === 'web') {
+    throw new Error('WAL service is not available on web platform. Use Supabase directly.');
+  }
+
+  const sqlite = getSQLite();
+  const db = sqlite.openDatabaseSync('cadence_wal.db');
   walInstance = new WALService(db);
   walInstance.init();
   return walInstance;

@@ -10,6 +10,7 @@
  *
  * Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7
  */
+import { Platform } from 'react-native';
 import { create, type StateCreator } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 
@@ -159,9 +160,21 @@ let sqliteStorage: StateStorage | null = null;
 /**
  * Creates an expo-sqlite backed storage adapter for zustand's persist middleware.
  * This enables hydrating the store from SQLite on app start.
+ * On web, falls back to a no-op in-memory storage.
  */
 export function createSQLiteStorage(): StateStorage {
   if (sqliteStorage) return sqliteStorage;
+
+  // On web, use in-memory storage (expo-sqlite not available)
+  if (Platform.OS === 'web') {
+    const memoryStore = new Map<string, string>();
+    sqliteStorage = {
+      getItem: (name: string): string | null => memoryStore.get(name) ?? null,
+      setItem: (name: string, value: string): void => { memoryStore.set(name, value); },
+      removeItem: (name: string): void => { memoryStore.delete(name); },
+    };
+    return sqliteStorage;
+  }
 
   // Lazy import to avoid issues in test environments
   // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -12,7 +12,20 @@
  *
  * Requirements: 5.1, 5.2, 5.3, 6.1, 6.2, 6.3, 6.4
  */
-import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+
+// Lazy-load expo-sqlite only on native platforms to avoid web .wasm resolution errors
+let SQLite: typeof import('expo-sqlite') | null = null;
+function getSQLite(): typeof import('expo-sqlite') {
+  if (!SQLite) {
+    if (Platform.OS === 'web') {
+      throw new Error('expo-sqlite is not available on web platform');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    SQLite = require('expo-sqlite') as typeof import('expo-sqlite');
+  }
+  return SQLite;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -90,9 +103,9 @@ const MAX_CACHED_MESSAGES = 100;
 // ─── Local Cache Service ─────────────────────────────────────────────────────
 
 export class LocalCacheService {
-  private db: SQLite.SQLiteDatabase;
+  private db: any; // SQLite.SQLiteDatabase (lazily resolved)
 
-  constructor(db: SQLite.SQLiteDatabase) {
+  constructor(db: any) {
     this.db = db;
   }
 
@@ -349,7 +362,12 @@ export function initLocalCache(): LocalCacheService {
     return cacheInstance;
   }
 
-  const db = SQLite.openDatabaseSync('cadence_cache.db');
+  if (Platform.OS === 'web') {
+    throw new Error('Local cache service is not available on web platform.');
+  }
+
+  const sqlite = getSQLite();
+  const db = sqlite.openDatabaseSync('cadence_cache.db');
   cacheInstance = new LocalCacheService(db);
   cacheInstance.init();
   return cacheInstance;
