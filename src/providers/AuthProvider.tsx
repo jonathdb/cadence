@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string): Promise<{ error: string | null }> => {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) {
+        console.error('[Auth] signUp error:', error.message, error.status);
         return { error: GENERIC_AUTH_ERROR };
       }
       return { error: null };
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string): Promise<{ error: string | null }> => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
+        console.error('[Auth] signIn error:', error.message, error.status);
         return { error: GENERIC_AUTH_ERROR };
       }
       return { error: null };

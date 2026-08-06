@@ -214,7 +214,8 @@ export function StoreIntegrationProvider({ children }: { children: React.ReactNo
       return;
     }
 
-    // Initialize the sync engine (idempotent — returns existing if already init'd)
+    // Initialize WAL first (sync engine depends on it), then sync engine
+    initWAL();
     initSyncEngine();
 
     // Subscribe to NetInfo changes to trigger flush on reconnect
