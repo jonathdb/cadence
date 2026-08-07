@@ -55,6 +55,165 @@ function determineBpmRange(
   }
 }
 
+// --- Session Context for program-based pace derivation ---
+
+/**
+ * Represents the context of a training session from a user's program.
+ * Used to derive a target pace when no route history is available.
+ * Validates: Requirements 5.1, 5.3, 5.4
+ */
+export interface SessionContext {
+  session_type: 'easy run' | 'tempo run' | 'interval session' | 'long run';
+  planned_duration_minutes?: number; // 1-480
+  intensity_label?: 'low' | 'moderate' | 'high';
+}
+
+/**
+ * Derives a target pace (seconds per km) from session context.
+ * Maps session types to base pace estimates and adjusts by intensity:
+ *   - "easy run" → 390 s/km
+ *   - "tempo run" → 310 s/km
+ *   - "interval session" → 280 s/km
+ *   - "long run" → 360 s/km
+ * Intensity adjustments:
+ *   - "low" → +30 s/km
+ *   - "moderate" → no change
+ *   - "high" → -20 s/km
+ *
+ * Validates: Requirements 5.3, 5.4
+ */
+export function deriveSessionPace(sessionContext: SessionContext): number {
+  const basePaceMap: Record<string, number> = {
+    'easy run': 390,
+    'tempo run': 310,
+    'interval session': 280,
+    'long run': 360,
+  };
+
+  let pace = basePaceMap[sessionContext.session_type];
+  if (pace === undefined) {
+    throw new Error(
+      `Unrecognized session_type: "${sessionContext.session_type}". Valid options: easy run, tempo run, interval session, long run`
+    );
+  }
+
+  // Adjust by intensity
+  switch (sessionContext.intensity_label) {
+    case 'low':
+      pace += 30;
+      break;
+    case 'high':
+      pace -= 20;
+      break;
+    // 'moderate' or undefined = no adjustment
+  }
+
+  return pace;
+}
+
+export interface MusicSeedsInput {
+  genres?: string[];       // Valid Spotify genre identifiers (e.g., "pop", "electronic")
+  seed_artists?: string[]; // Spotify artist IDs or artist names (resolved to IDs by handler)
+  seed_tracks?: string[];  // Spotify track IDs or track names (resolved to IDs by handler)
+}
+
+export interface ResolvedMusicSeeds {
+  genres: string[];        // Passed through as-is
+  seed_artists: string[];  // Resolved to Spotify artist IDs
+  seed_tracks: string[];   // Resolved to Spotify track IDs
+}
+
+/**
+ * Validates the combined seed count (max 5 per Spotify API constraint).
+ * Throws a descriptive error if exceeded.
+ * Validates: Requirements 11.4, 11.5
+ */
+export function validateSeedCount(
+  genres: string[] = [],
+  seedArtists: string[] = [],
+  seedTracks: string[] = []
+): void {
+  const total = genres.length + seedArtists.length + seedTracks.length;
+  if (total > 5) {
+    throw new Error(
+      `Combined seed count exceeds maximum of 5. ` +
+      `Provided: ${genres.length} genres, ${seedArtists.length} artists, ${seedTracks.length} tracks (total: ${total}).`
+    );
+  }
+}
+
+/**
+ * Resolves a value to a Spotify artist ID.
+ * If the value looks like a Spotify ID (22-char alphanumeric), returns it as-is.
+ * Otherwise, searches Spotify for the artist name and returns the top result's ID.
+ * Validates: Requirements 11.2, 11.6
+ */
+export async function resolveArtistId(
+  value: string,
+  accessToken: string
+): Promise<string | null> {
+  if (/^[a-zA-Z0-9]{22}$/.test(value)) {
+    return value;
+  }
+
+  const response = await spotifyApiRequest(
+    accessToken,
+    'GET',
+    `/search?q=${encodeURIComponent(value)}&type=artist&limit=1`
+  ) as { artists?: { items?: Array<{ id: string }> } };
+
+  return response.artists?.items?.[0]?.id ?? null;
+}
+
+/**
+ * Resolves a value to a Spotify track ID.
+ * If the value looks like a Spotify ID (22-char alphanumeric), returns it as-is.
+ * Otherwise, searches Spotify for the track name and returns the top result's ID.
+ * Validates: Requirements 11.3, 11.6
+ */
+export async function resolveTrackId(
+  value: string,
+  accessToken: string
+): Promise<string | null> {
+  if (/^[a-zA-Z0-9]{22}$/.test(value)) {
+    return value;
+  }
+
+  const response = await spotifyApiRequest(
+    accessToken,
+    'GET',
+    `/search?q=${encodeURIComponent(value)}&type=track&limit=1`
+  ) as { tracks?: { items?: Array<{ id: string }> } };
+
+  return response.tracks?.items?.[0]?.id ?? null;
+}
+
+/**
+ * Resolves all seed values, filtering out any that fail to resolve.
+ * Returns the resolved MusicSeeds ready for the Recommendations API.
+ * Validates: Requirements 11.2, 11.3, 11.6
+ */
+export async function resolveSeeds(
+  genres: string[] = [],
+  seedArtists: string[] = [],
+  seedTracks: string[] = [],
+  accessToken: string
+): Promise<ResolvedMusicSeeds> {
+  const resolvedArtists = (
+    await Promise.all(seedArtists.map((a) => resolveArtistId(a, accessToken)))
+  ).filter((id): id is string => id !== null);
+
+  const resolvedTracks = (
+    await Promise.all(seedTracks.map((t) => resolveTrackId(t, accessToken)))
+  ).filter((id): id is string => id !== null);
+
+  return {
+    genres,
+    seed_artists: resolvedArtists,
+    seed_tracks: resolvedTracks,
+  };
+}
+
 /**
  * Builds a Spotify search query string optimized for finding playlists that
  * match the user's activity intensity and BPM range.
@@ -762,10 +921,11 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
   },
 
   /**
-   * spotify_suggest_pace_playlist — Suggests playlists matching the user's running/cycling/walking pace.
-   * Uses route history context to correlate pace to ideal BPM and search for matching playlists.
+   * spotify_suggest_pace_playlist — Suggests playlists/tracks matching the user's running/cycling/walking pace.
+   * Uses fallback hierarchy for pace: target_pace → route summary → session_context → activity defaults.
+   * Supports music preference seeds via Spotify Recommendations API with retry-without-seeds fallback.
    * Subject to the spotify_actions Permission_Category.
-   * Validates: Requirement 35.1
+   * Validates: Requirements 4.1, 5.2, 5.3, 11.4, 11.6, 14.1, 14.2, 14.3, 14.4, 14.5, 15.1, 15.3, 15.4
    */
   spotify_suggest_pace_playlist: async (supabase, userId, args) => {
     const activityType = args.activity_type as string | undefined;
@@ -777,6 +937,10 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       distance_meters?: number;
       elevation_gain_meters?: number;
     } | undefined;
+    const sessionContext = args.session_context as SessionContext | undefined;
+    const genres = (args.genres as string[]) || [];
+    const seedArtists = (args.seed_artists as string[]) || [];
+    const seedTracks = (args.seed_tracks as string[]) || [];
 
     if (!activityType || !['running', 'cycling', 'walking'].includes(activityType)) {
       throw new Error(
@@ -784,36 +948,189 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       );
     }
 
-    // Determine the effective pace: prefer explicit target, fall back to route history average
-    const effectivePace =
-      targetPace ?? recentRouteSummary?.avg_pace_seconds_per_km ?? null;
+    // 1. Validate seed count (throws if > 5) — Requirement 11.4
+    validateSeedCount(genres, seedArtists, seedTracks);
 
-    // Correlate pace to ideal BPM range based on activity type
+    // 2. Determine effective pace using fallback hierarchy — Requirement 4.1
+    const effectivePace =
+      targetPace
+      ?? recentRouteSummary?.avg_pace_seconds_per_km
+      ?? (sessionContext ? deriveSessionPace(sessionContext) : null);
+
+    // 3. Determine BPM range (independent of music seeds) — Requirement 14.5
     const bpmRange = determineBpmRange(activityType, effectivePace);
 
-    // Build a search query combining activity type and BPM/energy descriptors
-    const searchQuery = buildPacePlaylistQuery(activityType, bpmRange, durationMinutes);
-
-    // Search Spotify for matching playlists
+    // 4. Get Spotify access token
     const accessToken = await getSpotifyAccessToken(supabase, userId);
 
-    const encodedQuery = encodeURIComponent(searchQuery);
-    const searchLimit = 5;
-    const data = (await spotifyApiRequest(
+    // 5. Check if seeds are provided
+    const hasSeeds = genres.length + seedArtists.length + seedTracks.length > 0;
+
+    if (hasSeeds) {
+      // 5a. Resolve names → IDs — Requirement 11.6
+      const resolvedSeeds = await resolveSeeds(genres, seedArtists, seedTracks, accessToken);
+
+      // 5b. Call Spotify Recommendations API with BPM + seeds
+      const recParams = new URLSearchParams();
+      if (resolvedSeeds.genres.length > 0) {
+        recParams.set('seed_genres', resolvedSeeds.genres.join(','));
+      }
+      if (resolvedSeeds.seed_artists.length > 0) {
+        recParams.set('seed_artists', resolvedSeeds.seed_artists.join(','));
+      }
+      if (resolvedSeeds.seed_tracks.length > 0) {
+        recParams.set('seed_tracks', resolvedSeeds.seed_tracks.join(','));
+      }
+      recParams.set('target_tempo', String((bpmRange.min + bpmRange.max) / 2));
+      recParams.set('min_tempo', String(bpmRange.min));
+      recParams.set('max_tempo', String(bpmRange.max));
+      recParams.set('limit', '20');
+
+      const recData = await spotifyApiRequest(
+        accessToken,
+        'GET',
+        `/recommendations?${recParams.toString()}`
+      ) as { tracks?: Array<Record<string, unknown>> };
+
+      const tracks = recData?.tracks ?? [];
+
+      if (tracks.length > 0) {
+        return {
+          activity_type: activityType,
+          target_bpm_range: bpmRange,
+          effective_pace_seconds_per_km: effectivePace,
+          duration_minutes: durationMinutes ?? null,
+          route_context_used: !!recentRouteSummary,
+          source: 'recommendations_with_seeds',
+          tracks: tracks.map((t: Record<string, unknown>) => ({
+            id: t.id,
+            name: t.name,
+            artist: ((t.artists as Array<{ name: string }>)?.[0])?.name ?? 'Unknown',
+            uri: t.uri,
+            external_url: (t.external_urls as Record<string, unknown>)?.spotify ?? null,
+          })),
+        };
+      }
+
+      // 5c. Retry without seeds — Requirement 15.4
+      const retryParams = new URLSearchParams();
+      retryParams.set('seed_genres', activityType === 'running' ? 'workout' : 'pop');
+      retryParams.set('target_tempo', String((bpmRange.min + bpmRange.max) / 2));
+      retryParams.set('min_tempo', String(bpmRange.min));
+      retryParams.set('max_tempo', String(bpmRange.max));
+      retryParams.set('limit', '20');
+
+      const retryData = await spotifyApiRequest(
+        accessToken,
+        'GET',
+        `/recommendations?${retryParams.toString()}`
+      ) as { tracks?: Array<Record<string, unknown>> };
+
+      const retryTracks = retryData?.tracks ?? [];
+
+      if (retryTracks.length > 0) {
+        return {
+          activity_type: activityType,
+          target_bpm_range: bpmRange,
+          effective_pace_seconds_per_km: effectivePace,
+          duration_minutes: durationMinutes ?? null,
+          route_context_used: !!recentRouteSummary,
+          source: 'recommendations_without_seeds',
+          tracks: retryTracks.map((t: Record<string, unknown>) => ({
+            id: t.id,
+            name: t.name,
+            artist: ((t.artists as Array<{ name: string }>)?.[0])?.name ?? 'Unknown',
+            uri: t.uri,
+            external_url: (t.external_urls as Record<string, unknown>)?.spotify ?? null,
+          })),
+        };
+      }
+    } else {
+      // 5d. No seeds — use existing playlist search logic — Requirement 15.1, 15.3
+      const searchQuery = buildPacePlaylistQuery(activityType, bpmRange, durationMinutes);
+      const encodedQuery = encodeURIComponent(searchQuery);
+      const searchLimit = 5;
+
+      const data = await spotifyApiRequest(
+        accessToken,
+        'GET',
+        `/search?type=playlist&q=${encodedQuery}&limit=${searchLimit}`
+      ) as { playlists?: { items?: Array<Record<string, unknown>> } };
+
+      const items = data?.playlists?.items ?? [];
+
+      if (items.length > 0) {
+        const playlists = items.map((item: Record<string, unknown>) => ({
+          id: item.id,
+          name: item.name,
+          description: (item.description as string) || '',
+          tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
+          external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+        }));
+
+        return {
+          activity_type: activityType,
+          target_bpm_range: bpmRange,
+          effective_pace_seconds_per_km: effectivePace,
+          duration_minutes: durationMinutes ?? null,
+          route_context_used: !!recentRouteSummary,
+          source: 'playlist_search',
+          playlists,
+        };
+      }
+    }
+
+    // 6. Fallback: widen BPM ±10 and retry playlist search
+    const widenedBpmRange = {
+      min: bpmRange.min - 10,
+      max: bpmRange.max + 10,
+      label: `${bpmRange.label} (widened)`,
+    };
+    const widenedQuery = buildPacePlaylistQuery(activityType, widenedBpmRange, durationMinutes);
+    const widenedData = await spotifyApiRequest(
       accessToken,
       'GET',
-      `/search?type=playlist&q=${encodedQuery}&limit=${searchLimit}`
-    )) as { playlists?: { items?: Array<Record<string, unknown>> } };
+      `/search?type=playlist&q=${encodeURIComponent(widenedQuery)}&limit=5`
+    ) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-    const items = data?.playlists?.items ?? [];
+    const widenedItems = widenedData?.playlists?.items ?? [];
 
-    const playlists = items.map((item: Record<string, unknown>) => ({
+    if (widenedItems.length > 0) {
+      const playlists = widenedItems.map((item: Record<string, unknown>) => ({
+        id: item.id,
+        name: item.name,
+        description: (item.description as string) || '',
+        tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
+        external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+      }));
+
+      return {
+        activity_type: activityType,
+        target_bpm_range: widenedBpmRange,
+        effective_pace_seconds_per_km: effectivePace,
+        duration_minutes: durationMinutes ?? null,
+        route_context_used: !!recentRouteSummary,
+        source: 'playlist_search',
+        playlists,
+      };
+    }
+
+    // 7. Final fallback: generic activity search
+    const fallbackQuery = `${activityType} workout`;
+    const fallbackData = await spotifyApiRequest(
+      accessToken,
+      'GET',
+      `/search?type=playlist&q=${encodeURIComponent(fallbackQuery)}&limit=5`
+    ) as { playlists?: { items?: Array<Record<string, unknown>> } };
+
+    const fallbackItems = fallbackData?.playlists?.items ?? [];
+
+    const playlists = fallbackItems.map((item: Record<string, unknown>) => ({
       id: item.id,
       name: item.name,
       description: (item.description as string) || '',
       tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
-      external_url:
-        (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+      external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
     }));
 
     return {
@@ -822,6 +1139,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       effective_pace_seconds_per_km: effectivePace,
       duration_minutes: durationMinutes ?? null,
       route_context_used: !!recentRouteSummary,
+      source: 'playlist_search',
       playlists,
     };
   },
@@ -1003,6 +1321,428 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     );
 
     return { workouts };
+  },
+
+  /**
+   * get_active_program — Retrieves the user's currently active training program
+   * with full nested structure (days, items with exercise/block resolution).
+   * Returns { active_program: null } when no active program exists.
+   * Validates: Requirements 6.1, 6.2, 6.3, 6.5, 6.6, 6.7
+   */
+  get_active_program: async (supabase, userId, _args) => {
+    // Query programs where user_id = userId and status = 'active'
+    const { data: program, error: progErr } = await supabase
+      .from('programs')
+      .select('id, name, status, created_at, updated_at')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .single();
+
+    if (progErr && progErr.code !== 'PGRST116') {
+      // PGRST116 = no rows returned (not a real error, just means no active program)
+      throw new Error(`Failed to fetch active program: ${progErr.message}`);
+    }
+
+    if (!program) {
+      return { active_program: null };
+    }
+
+    // Fetch program days
+    const { data: days, error: daysErr } = await supabase
+      .from('program_days')
+      .select('id, day_number, name')
+      .eq('program_id', program.id)
+      .order('day_number');
+
+    if (daysErr) {
+      throw new Error(`Failed to fetch program days: ${daysErr.message}`);
+    }
+
+    // Build nested structure with items for each day
+    const daysWithItems = [];
+    for (const day of days || []) {
+      const { data: items, error: itemsErr } = await supabase
+        .from('program_day_items')
+        .select('id, type, "order", exercise_id, block_id, target_sets, target_reps, target_weight, target_rpe, timer_config, notes')
+        .eq('program_day_id', day.id)
+        .order('"order"');
+
+      if (itemsErr) {
+        throw new Error(`Failed to fetch items for day ${day.name}: ${itemsErr.message}`);
+      }
+
+      // Resolve exercise names and block details
+      const resolvedItems = [];
+      for (const item of items || []) {
+        let exercise_name: string | null = null;
+        let block_name: string | null = null;
+        let block_type: string | null = null;
+        let block_timer_config: unknown = null;
+
+        if (item.type === 'exercise' && item.exercise_id) {
+          const { data: exercise } = await supabase
+            .from('exercises')
+            .select('name')
+            .eq('id', item.exercise_id)
+            .single();
+          exercise_name = exercise?.name ?? null;
+        }
+
+        if (item.type === 'block' && item.block_id) {
+          const { data: block } = await supabase
+            .from('blocks')
+            .select('name, type, timer_config')
+            .eq('id', item.block_id)
+            .single();
+          block_name = block?.name ?? null;
+          block_type = block?.type ?? null;
+          block_timer_config = block?.timer_config ?? null;
+        }
+
+        resolvedItems.push({
+          type: item.type,
+          order: item.order,
+          exercise_name,
+          block_name,
+          block_type,
+          block_timer_config,
+          target_sets: item.target_sets,
+          target_reps: item.target_reps,
+          target_weight: item.target_weight,
+          target_rpe: item.target_rpe,
+          timer_config: item.timer_config,
+          notes: item.notes,
+        });
+      }
+
+      daysWithItems.push({
+        id: day.id,
+        day_number: day.day_number,
+        name: day.name,
+        items: resolvedItems,
+      });
+    }
+
+    return {
+      active_program: {
+        id: program.id,
+        name: program.name,
+        status: program.status,
+        created_at: program.created_at,
+        updated_at: program.updated_at,
+        days: daysWithItems,
+      },
+    };
+  },
+
+  /**
+   * get_programs — Returns a list of the user's programs with summary counts.
+   * Optionally filtered by status. Ordered by updated_at descending.
+   * Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7
+   */
+  get_programs: async (supabase, userId, args) => {
+    const status = (args.status as string) ?? 'all';
+    const validStatuses = ['active', 'draft', 'archived', 'all'];
+
+    if (!validStatuses.includes(status)) {
+      throw new Error(
+        `Unrecognized status: "${status}". Valid options: ${validStatuses.join(', ')}`
+      );
+    }
+
+    // Build query
+    let query = supabase
+      .from('programs')
+      .select('id, name, status, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    if (status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    const { data: programs, error: progErr } = await query;
+
+    if (progErr) {
+      throw new Error(`Failed to fetch programs: ${progErr.message}`);
+    }
+
+    if (!programs || programs.length === 0) {
+      return { programs: [] };
+    }
+
+    // For each program, get days_count and sessions_count
+    const result = [];
+    for (const program of programs) {
+      // Count program days
+      const { count: daysCount } = await supabase
+        .from('program_days')
+        .select('id', { count: 'exact', head: true })
+        .eq('program_id', program.id);
+
+      // Count completed sessions (via program_days)
+      const { data: programDays } = await supabase
+        .from('program_days')
+        .select('id')
+        .eq('program_id', program.id);
+
+      let sessionsCount = 0;
+      if (programDays && programDays.length > 0) {
+        const dayIds = programDays.map((d: { id: string }) => d.id);
+        const { count } = await supabase
+          .from('sessions')
+          .select('id', { count: 'exact', head: true })
+          .in('program_day_id', dayIds)
+          .eq('status', 'completed');
+        sessionsCount = count ?? 0;
+      }
+
+      result.push({
+        id: program.id,
+        name: program.name,
+        status: program.status,
+        created_at: program.created_at,
+        updated_at: program.updated_at,
+        days_count: daysCount ?? 0,
+        sessions_count: sessionsCount,
+      });
+    }
+
+    return { programs: result };
+  },
+
+  /**
+   * get_session_history — Returns recent completed session summaries with aggregates.
+   * Optionally filters by program_id. Returns empty list for unauthorized program_id
+   * (no existence leakage) or when no sessions match.
+   * Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.6, 7.7, 7.8
+   */
+  get_session_history: async (supabase, userId, args) => {
+    const limit = (args.limit as number) ?? 10;
+    const programId = args.program_id as string | undefined;
+
+    // Validate limit range (Requirement 7.8)
+    if (limit < 1 || limit > 100) {
+      throw new Error('Parameter "limit" must be between 1 and 100.');
+    }
+
+    // Build query for completed sessions (Requirement 7.4)
+    let query = supabase
+      .from('sessions')
+      .select('id, program_day_id, status, started_at, completed_at, created_at')
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(limit);
+
+    // If filtering by program_id, get program_day_ids for that program (Requirement 7.3)
+    if (programId) {
+      // Verify program belongs to the user — return empty if not (Requirement 7.7)
+      const { data: programCheck } = await supabase
+        .from('programs')
+        .select('id')
+        .eq('id', programId)
+        .eq('user_id', userId)
+        .single();
+
+      if (!programCheck) {
+        return { sessions: [] };
+      }
+
+      const { data: programDays } = await supabase
+        .from('program_days')
+        .select('id')
+        .eq('program_id', programId);
+
+      const dayIds = (programDays || []).map((d: { id: string }) => d.id);
+      if (dayIds.length === 0) {
+        return { sessions: [] };
+      }
+
+      query = query.in('program_day_id', dayIds);
+    }
+
+    const { data: sessions, error: sessErr } = await query;
+
+    if (sessErr) {
+      throw new Error(`Failed to fetch session history: ${sessErr.message}`);
+    }
+
+    // Return empty list when no sessions match (Requirement 7.6)
+    if (!sessions || sessions.length === 0) {
+      return { sessions: [] };
+    }
+
+    // For each session, compute aggregates (Requirement 7.1)
+    const result = [];
+    for (const session of sessions) {
+      // Get program day name
+      let programDayName = 'Unknown';
+      if (session.program_day_id) {
+        const { data: dayData } = await supabase
+          .from('program_days')
+          .select('name')
+          .eq('id', session.program_day_id)
+          .single();
+        programDayName = dayData?.name ?? 'Unknown';
+      }
+
+      // Get logged sets for aggregates
+      const { data: sets } = await supabase
+        .from('logged_sets')
+        .select('weight, reps, is_pr')
+        .eq('session_id', session.id);
+
+      const totalSets = sets?.length ?? 0;
+      const totalVolume = (sets ?? []).reduce(
+        (sum: number, s: { weight: number; reps: number }) =>
+          sum + ((s.weight || 0) * (s.reps || 0)),
+        0
+      );
+      const prCount = (sets ?? []).filter(
+        (s: { is_pr: boolean }) => s.is_pr
+      ).length;
+
+      // Calculate duration in seconds
+      const durationSeconds = session.completed_at && session.started_at
+        ? Math.round(
+            (new Date(session.completed_at).getTime() -
+              new Date(session.started_at).getTime()) /
+              1000
+          )
+        : 0;
+
+      result.push({
+        id: session.id,
+        program_day_name: programDayName,
+        completed_at: session.completed_at,
+        total_duration_seconds: durationSeconds,
+        total_sets: totalSets,
+        total_volume_kg: totalVolume,
+        pr_count: prCount,
+      });
+    }
+
+    return { sessions: result };
+  },
+
+  /**
+   * get_session_details — Returns detailed information about a specific workout session,
+   * including logged sets grouped by exercise and block completions.
+   * Subject to the health_access Permission_Category.
+   * Validates: Requirements 8.1, 8.3, 8.4, 8.6, 8.7
+   */
+  get_session_details: async (supabase, userId, args) => {
+    const sessionId = args.session_id as string | undefined;
+
+    if (!sessionId) {
+      throw new Error('get_session_details requires a "session_id" argument');
+    }
+
+    // Verify session belongs to authenticated user
+    const { data: session, error: sessErr } = await supabase
+      .from('sessions')
+      .select('id, program_day_id, status, started_at, completed_at')
+      .eq('id', sessionId)
+      .eq('user_id', userId)
+      .single();
+
+    if (sessErr || !session) {
+      throw new Error('Session not found');
+    }
+
+    // Get program day name
+    let programDayName = 'Unknown';
+    if (session.program_day_id) {
+      const { data: dayData } = await supabase
+        .from('program_days')
+        .select('name')
+        .eq('id', session.program_day_id)
+        .single();
+      programDayName = dayData?.name ?? 'Unknown';
+    }
+
+    // Calculate duration
+    const totalDurationSeconds = session.completed_at && session.started_at
+      ? Math.round((new Date(session.completed_at).getTime() - new Date(session.started_at).getTime()) / 1000)
+      : null;
+
+    // Fetch logged sets ordered by exercise then set_number
+    const { data: sets, error: setsErr } = await supabase
+      .from('logged_sets')
+      .select('exercise_id, set_number, reps, weight, rpe, is_pr, pr_type, actual_duration_seconds')
+      .eq('session_id', sessionId)
+      .order('exercise_id')
+      .order('set_number');
+
+    if (setsErr) {
+      throw new Error(`Failed to fetch logged sets: ${setsErr.message}`);
+    }
+
+    // Group sets by exercise and resolve names
+    const exerciseGroups: Record<string, { exercise_name: string; sets: unknown[] }> = {};
+    for (const set of sets || []) {
+      if (!exerciseGroups[set.exercise_id]) {
+        // Resolve exercise name
+        const { data: exercise } = await supabase
+          .from('exercises')
+          .select('name')
+          .eq('id', set.exercise_id)
+          .single();
+
+        exerciseGroups[set.exercise_id] = {
+          exercise_name: exercise?.name ?? 'Unknown',
+          sets: [],
+        };
+      }
+
+      exerciseGroups[set.exercise_id].sets.push({
+        set_number: set.set_number,
+        reps: set.reps,
+        weight: set.weight,
+        rpe: set.rpe ?? null,
+        is_pr: set.is_pr ?? false,
+        pr_type: set.pr_type ?? null,
+        actual_duration_seconds: set.actual_duration_seconds ?? null,
+      });
+    }
+
+    const exercises = Object.values(exerciseGroups);
+
+    // Fetch block completions
+    const { data: blockCompletions } = await supabase
+      .from('block_completions')
+      .select('block_id, actual_duration_seconds, actual_rounds')
+      .eq('session_id', sessionId);
+
+    // Resolve block names
+    const resolvedBlockCompletions = [];
+    for (const bc of blockCompletions || []) {
+      const { data: block } = await supabase
+        .from('blocks')
+        .select('name')
+        .eq('id', bc.block_id)
+        .single();
+
+      resolvedBlockCompletions.push({
+        block_name: block?.name ?? 'Unknown',
+        actual_duration_seconds: bc.actual_duration_seconds,
+        actual_rounds: bc.actual_rounds,
+      });
+    }
+
+    return {
+      session: {
+        id: session.id,
+        program_day_name: programDayName,
+        status: session.status,
+        started_at: session.started_at,
+        completed_at: session.completed_at,
+        total_duration_seconds: totalDurationSeconds,
+      },
+      exercises,
+      block_completions: resolvedBlockCompletions,
+    };
   },
 };
 

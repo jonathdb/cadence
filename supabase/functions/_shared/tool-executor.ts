@@ -63,6 +63,10 @@ const TOOL_PERMISSION_MAP: Record<string, PermissionCategory> = {
   get_recovery_summary: 'health_access',
   get_recent_workouts_summary: 'health_access',
   get_route_history: 'health_access',
+  get_active_program: 'program_edits',
+  get_programs: 'program_edits',
+  get_session_history: 'health_access',
+  get_session_details: 'health_access',
 };
 
 /**

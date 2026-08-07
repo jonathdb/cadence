@@ -248,7 +248,7 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'spotify_suggest_pace_playlist',
       description:
-        'Suggest a Spotify playlist tailored to the user\'s running/cycling/walking pace. Uses route history context (pace profile, distance, duration) to find playlists with music matching the activity intensity. For running, correlates pace to BPM: ~170-180 BPM for 5:00-6:00 min/km, ~150-165 BPM for 6:00-7:00 min/km, ~140-150 BPM for walking. Use this tool when the user requests music for a cardio session and route history is available.',
+        'Suggest a Spotify playlist tailored to the user\'s running/cycling/walking pace. Works with or without route history — activity_type is the only required parameter. When route history is available, uses pace data for precise BPM matching. When unavailable, accepts session_context (session type, planned duration, intensity) from the user\'s program to estimate appropriate BPM. Falls back to activity-type defaults when no context is provided. Optionally accepts genres, seed_artists, and seed_tracks to personalize recommendations via the Spotify Recommendations API (max 5 combined seeds).',
       parameters: {
         type: 'object',
         properties: {
@@ -287,8 +287,109 @@ export const toolDefinitions: ToolDefinition[] = [
               },
             },
           },
+          session_context: {
+            type: 'object',
+            description: 'Program-derived session context for BPM estimation when route history is unavailable.',
+            properties: {
+              session_type: {
+                type: 'string',
+                enum: ['easy run', 'tempo run', 'interval session', 'long run'],
+                description: 'Type of running session from the training program',
+              },
+              planned_duration_minutes: {
+                type: 'number',
+                minimum: 1,
+                maximum: 480,
+                description: 'Planned session duration in minutes',
+              },
+              intensity_label: {
+                type: 'string',
+                enum: ['low', 'moderate', 'high'],
+                description: 'Session intensity level',
+              },
+            },
+          },
+          genres: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Spotify genre identifiers for recommendations (e.g., "pop", "hip-hop", "electronic"). Combined with seed_artists and seed_tracks, max 5 total seeds.',
+          },
+          seed_artists: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Spotify artist IDs or artist names to seed recommendations. Names are resolved to IDs via the Spotify Search API. Combined with genres and seed_tracks, max 5 total seeds.',
+          },
+          seed_tracks: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Spotify track IDs or track names to seed recommendations. Names are resolved to IDs via the Spotify Search API. Combined with genres and seed_artists, max 5 total seeds.',
+          },
         },
         required: ['activity_type'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_active_program',
+      description:
+        'Retrieve the user\'s currently active training program with full structure (days, exercises, blocks, targets). Returns null if no active program exists.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_programs',
+      description: 'List all of the user\'s programs (active, draft, archived) with summary info.',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['active', 'draft', 'archived', 'all'],
+            description: 'Filter by program status (default: all)',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_session_history',
+      description:
+        'Retrieve the user\'s recent completed workout sessions with summary data (date, program day, duration, sets, volume, PRs).',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 100,
+            description: 'Max number of sessions to return (default 10)',
+          },
+          program_id: {
+            type: 'string',
+            description: 'Filter by program UUID',
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_session_details',
+      description:
+        'Retrieve all logged sets for a specific session, grouped by exercise, with session metadata and block completions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          session_id: { type: 'string', description: 'UUID of the session' },
+        },
+        required: ['session_id'],
       },
     },
   },
