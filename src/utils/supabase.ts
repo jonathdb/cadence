@@ -6,14 +6,23 @@ import { AppState, Platform } from 'react-native';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
+// In-memory fallback for SSR (server has no window/localStorage/AsyncStorage)
+const isServer = typeof window === 'undefined';
+const memoryStorage: Record<string, string> = {};
+const serverStorage = {
+  getItem: (key: string) => memoryStorage[key] ?? null,
+  setItem: (key: string, value: string) => { memoryStorage[key] = value; },
+  removeItem: (key: string) => { delete memoryStorage[key]; },
+};
+
 export const supabase: SupabaseClient<Database> = createClient<Database>(
   supabaseUrl,
   supabaseAnonKey,
   {
     auth: {
-      storage: AsyncStorage,
-      autoRefreshToken: true,
-      persistSession: true,
+      storage: isServer ? serverStorage : AsyncStorage,
+      autoRefreshToken: !isServer,
+      persistSession: !isServer,
       detectSessionInUrl: false,
     },
   }

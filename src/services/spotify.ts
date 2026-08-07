@@ -16,11 +16,11 @@
  */
 
 import {
-    AuthRequest,
-    exchangeCodeAsync,
-    makeRedirectUri,
-    revokeAsync,
-    TokenTypeHint,
+  AuthRequest,
+  exchangeCodeAsync,
+  makeRedirectUri,
+  revokeAsync,
+  TokenTypeHint,
 } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -60,9 +60,14 @@ const SPOTIFY_SCOPES = [
 /**
  * Build the redirect URI using the app's scheme.
  * On native: cadence://spotify-callback
- * On web: uses the current origin + path
+ * On web: uses 127.0.0.1 with the current port (Spotify requires IP, not localhost)
  */
 function getRedirectUri(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    // Spotify requires 127.0.0.1 for loopback — never "localhost"
+    const port = window.location.port ? `:${window.location.port}` : '';
+    return `http://127.0.0.1${port}/--/spotify-callback`;
+  }
   return makeRedirectUri({
     scheme: 'cadence',
     path: 'spotify-callback',
@@ -82,6 +87,7 @@ function getRedirectUri(): string {
  */
 export async function connectSpotify(): Promise<SpotifyAuth | null> {
   const redirectUri = getRedirectUri();
+  console.log('[Spotify] redirectUri:', redirectUri);
 
   // Build the auth request with PKCE enabled (default)
   const request = new AuthRequest({
