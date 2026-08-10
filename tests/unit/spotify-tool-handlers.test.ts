@@ -79,6 +79,7 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
         description: 'High energy tracks',
         tracks_total: 50,
         external_url: 'https://open.spotify.com/playlist/pl-1',
+        image_url: null,
       });
     });
 
@@ -170,6 +171,7 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
         name: 'Morning Run',
         external_url: 'https://open.spotify.com/playlist/new-pl-1',
         tracks_added: 0,
+        image_url: null,
       });
     });
 

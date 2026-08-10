@@ -6,15 +6,18 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
 
 ## Tasks
 
-- [ ] 1. Backend: Enrich Spotify tool handlers with image_url
-  - [ ] 1.1 Add image_url extraction to spotify_search_playlist and spotify_suggest_pace_playlist handlers
+- [x] 1. Backend: Enrich Spotify tool handlers with image_url
+  - [x] 1.1 Add image_url extraction to spotify_search_playlist and spotify_suggest_pace_playlist handlers
     - In `supabase/functions/_shared/tool-handlers.ts`, update the handler functions for `spotify_search_playlist` and `spotify_suggest_pace_playlist` to extract `image_url` from each playlist item's `images` array (`images[0].url` if non-empty, otherwise `null`)
     - Include `image_url` in each playlist object in the returned Tool_Result JSON
+    - **IMPORTANT: Preserve existing behavior.** The `spotify_suggest_pace_playlist` handler has complex fallback logic (seed-based search → retry without seeds → no-seed search → widened BPM → generic fallback). Add `image_url` to the playlist mapping in ALL code paths without altering the control flow, endpoint URLs, or query logic. There are multiple `.map()` calls that build playlist objects — each one needs `image_url` added.
+    - **IMPORTANT: Do NOT modify `spotify_search_tracks` or `spotify_modify_playlist` handlers** — they are not part of this feature and must remain untouched.
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 1.2 Add image_url extraction to spotify_create_playlist handler
+  - [x] 1.2 Add image_url extraction to spotify_create_playlist handler
     - In `supabase/functions/_shared/tool-handlers.ts`, update the `spotify_create_playlist` handler to extract `image_url` from the created playlist's Spotify API response (`images[0].url` if available, otherwise `null`)
     - Include `image_url` in the returned Tool_Result JSON
+    - **IMPORTANT: Preserve the dual-endpoint retry pattern** (`/me/playlists` then `/users/{id}/playlists`). The `createData` type will need to include `images` from the API response. Do NOT change the endpoint URLs, the retry logic, the debug logging, or the track-adding logic.
     - _Requirements: 1.3_
 
   - [ ]* 1.3 Write unit tests for image_url extraction logic
@@ -24,17 +27,17 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
     - Test: handler sets image_url to null when images field is missing
     - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 2. Data layer: PlaylistCardData interface and extraction utility
-  - [ ] 2.1 Define PlaylistCardData interface
+- [x] 2. Data layer: PlaylistCardData interface and extraction utility
+  - [x] 2.1 Define PlaylistCardData interface
     - Create or extend `src/types/spotify.ts` with the `PlaylistCardData` interface containing: `id`, `name`, `description`, `trackCount`, `externalUrl`, `imageUrl`
     - _Requirements: 2.1, 2.3, 2.4, 2.5, 2.6_
 
-  - [ ] 2.2 Extend ToolCallData with optional result field
+  - [x] 2.2 Extend ToolCallData with optional result field
     - In `src/types/chat.ts`, add an optional `result?: string` field to the `ToolCallData` interface
     - This stores the raw JSON result from auto-executed retrieval tools
     - _Requirements: 3.1, 3.2, 4.1_
 
-  - [ ] 2.3 Implement extractPlaylistCardData utility
+  - [x] 2.3 Implement extractPlaylistCardData utility
     - Create `src/utils/extract-playlist-card-data.ts`
     - Implement `extractPlaylistCardData(toolName: string, toolResult: unknown): PlaylistCardData[]`
     - For `spotify_search_playlist` / `spotify_suggest_pace_playlist`: map `result.playlists` array into `PlaylistCardData[]`
@@ -58,11 +61,12 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
     - **Validates: Requirements 1.1, 1.2, 1.3**
     - In `tests/property/extract-playlist-card-data.prop.ts`, add property that generates random Spotify API item shapes and verifies `imageUrl` is `images[0].url` when non-empty, or `null` otherwise
 
-- [ ] 3. Checkpoint - Ensure data layer tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [x] 3. Checkpoint - Ensure data layer tests pass
+  - Run existing Spotify tests (`tests/unit/spotify-tool-handlers.test.ts`, `tests/unit/spotify-client.test.ts`) to verify no regressions
+  - Ensure all new tests pass, ask the user if questions arise.
 
-- [ ] 4. UI: PlaylistCard component
-  - [ ] 4.1 Implement PlaylistCard component
+- [x] 4. UI: PlaylistCard component
+  - [x] 4.1 Implement PlaylistCard component
     - Create `src/components/PlaylistCard.tsx`
     - Render outer container with `backgroundElevated`, 1px `border`, `Radii.large`, padding `Spacing.three`
     - Row layout: 64×64 image (Radii.medium border radius) on left, text stack on right
@@ -104,8 +108,8 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
     - Test: container has accessibilityRole="summary"
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.8, 5.3, 5.4, 6.3_
 
-- [ ] 5. UI: PlaylistCardList component
-  - [ ] 5.1 Implement PlaylistCardList component
+- [x] 5. UI: PlaylistCardList component
+  - [x] 5.1 Implement PlaylistCardList component
     - Create `src/components/PlaylistCardList.tsx`
     - Accept `playlists: PlaylistCardData[]` prop
     - Render a vertical stack of `PlaylistCard` components with `Spacing.two` gap
@@ -119,12 +123,12 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
     - Test: uses Spacing.two gap between cards
     - _Requirements: 3.3, 3.4_
 
-- [ ] 6. Chat integration: Wire playlist cards into chat renderer
-  - [ ] 6.1 Store tool results after auto-execution
+- [x] 6. Chat integration: Wire playlist cards into chat renderer
+  - [x] 6.1 Store tool results after auto-execution
     - In the auto-execution logic (likely in chat hook or service that calls `execute-tool-call`), populate the `result` field on `ToolCallData` when a retrieval tool completes successfully
     - _Requirements: 3.1, 3.2, 4.1_
 
-  - [ ] 6.2 Render PlaylistCardList in chat message flow
+  - [x] 6.2 Render PlaylistCardList in chat message flow
     - In `src/app/(tabs)/chat/index.tsx` (or the relevant `renderItem` callback), after the assistant text bubble:
       - Detect if the message has `toolCalls` with a Spotify tool name (`spotify_search_playlist`, `spotify_suggest_pace_playlist`, `spotify_create_playlist`)
       - Check if the tool call has a populated `result` field
@@ -140,8 +144,10 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
     - Test: "Open in Spotify" button calls Linking.openURL with correct URL
     - _Requirements: 3.1, 4.1, 2.6_
 
-- [ ] 7. Final checkpoint - Ensure all tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [x] 7. Final checkpoint - Ensure all tests pass
+  - Run all tests including existing Spotify tests (`tests/unit/spotify-tool-handlers.test.ts`, `tests/unit/spotify-client.test.ts`) to confirm no regressions
+  - Verify `spotify_search_tracks` and `spotify_modify_playlist` handlers are unmodified
+  - Ensure all new tests pass, ask the user if questions arise.
 
 ## Notes
 
@@ -153,6 +159,14 @@ This plan implements rich Spotify playlist cards in the Cadence chat interface. 
 - The implementation uses TypeScript with React Native (Expo) and `fast-check` for property-based tests
 - `expo-image` is used for image rendering with built-in placeholder support
 - `expo-linking` is used for opening external URLs
+- **CRITICAL: Existing Spotify tool handlers must not be broken.** The following tools exist and must remain fully functional after this implementation:
+  - `spotify_search_playlist` — uses `/search?type=playlist` endpoint
+  - `spotify_search_tracks` — uses `/search?type=track` endpoint (NOT part of this feature, do not modify)
+  - `spotify_create_playlist` — uses dual-endpoint retry (`/me/playlists` → `/users/{id}/playlists`) with debug logging
+  - `spotify_modify_playlist` — uses `/playlists/{id}/items` for add/remove (NOT part of this feature, do not modify)
+  - `spotify_suggest_pace_playlist` — complex multi-fallback search with BPM widening, seed retry logic
+- The `spotifyApiRequest` and `getSpotifyAccessToken` helpers in `supabase/functions/_shared/spotify-client.ts` must not be modified
+- Existing tests in `tests/unit/spotify-tool-handlers.test.ts` and `tests/unit/spotify-client.test.ts` must continue to pass
 
 ## Task Dependency Graph
 

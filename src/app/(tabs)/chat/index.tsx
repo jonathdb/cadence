@@ -21,12 +21,14 @@ import {
     View
 } from 'react-native';
 
+import { PlaylistCardList } from '@/components/PlaylistCardList';
 import { ProgramProposal } from '@/components/ProgramProposal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
+import { extractPlaylistCardData } from '@/utils/extract-playlist-card-data';
 import { supabase } from '@/utils/supabase';
 
 // ---------------------------------------------------------------------------
@@ -45,7 +47,16 @@ interface ToolCallData {
   name: string;
   arguments: string;
   status: 'pending_approval' | 'approved' | 'auto_applied' | 'rejected';
+  /** Raw JSON result string from tool execution (populated for auto-executed retrieval tools) */
+  result?: string;
 }
+
+/** Spotify tool names that produce playlist card data */
+const SPOTIFY_PLAYLIST_TOOLS = new Set([
+  'spotify_search_playlist',
+  'spotify_suggest_pace_playlist',
+  'spotify_create_playlist',
+]);
 
 /** Tools that are read-only retrieval and should be auto-executed without approval */
 const RETRIEVAL_TOOLS = new Set([
@@ -365,6 +376,35 @@ export default function ChatScreen() {
         });
       }
     }
+
+    // Store tool results on the corresponding ToolCallData in messages state
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (!m.toolCalls) return m;
+        const hasMatchingToolCall = m.toolCalls.some((tc) =>
+          toolResults.some((tr) => tr.tool_call_id === tc.id)
+        );
+        if (!hasMatchingToolCall) return m;
+        return {
+          ...m,
+          toolCalls: m.toolCalls.map((tc) => {
+            const matchingResult = toolResults.find((tr) => tr.tool_call_id === tc.id);
+            if (matchingResult) {
+              // Only store result for successful executions (no error in response)
+              try {
+                const parsed = JSON.parse(matchingResult.content);
+                if (!parsed.error) {
+                  return { ...tc, result: matchingResult.content };
+                }
+              } catch {
+                // If JSON parsing fails, don't store the result
+              }
+            }
+            return tc;
+          }),
+        };
+      })
+    );
 
     // Build a follow-up conversation with tool results and send back to the AI
     const followUpConversation = [
@@ -892,6 +932,26 @@ export default function ChatScreen() {
     const isUser = item.role === 'user';
     const isSystem = item.role === 'system';
 
+    // Extract playlist card data from Spotify tool call results
+    const playlistCards = (() => {
+      if (isUser || isSystem || !item.toolCalls) return [];
+      for (const tc of item.toolCalls) {
+        if (SPOTIFY_PLAYLIST_TOOLS.has(tc.name) && tc.result) {
+          try {
+            const parsed = JSON.parse(tc.result);
+            // The stored result is the full edge function response: { tool_call_id, result: {...} }
+            // extractPlaylistCardData expects the inner result object
+            const toolResult = parsed.result ?? parsed;
+            const cards = extractPlaylistCardData(tc.name, toolResult);
+            if (cards.length > 0) return cards;
+          } catch {
+            // Malformed JSON result — skip
+          }
+        }
+      }
+      return [];
+    })();
+
     return (
       <View style={styles.messageWrapper}>
         <View
@@ -914,6 +974,12 @@ export default function ChatScreen() {
               {renderTextWithLinks(item.content, isUser ? theme.chatBubbleUserText : isSystem ? theme.chatBubbleSystemText : theme.chatBubbleAssistantText, theme.accent)}
             </ThemedText>
           ) : null}
+
+          {playlistCards.length > 0 && (
+            <View style={styles.playlistCardsContainer}>
+              <PlaylistCardList playlists={playlistCards} />
+            </View>
+          )}
 
           {item.toolCalls?.filter((tc) => !RETRIEVAL_TOOLS.has(tc.name)).map((tc) => (
             <ProgramProposal
@@ -1065,6 +1131,9 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 15,
     lineHeight: 22,
+  },
+  playlistCardsContainer: {
+    marginTop: Spacing.two,
   },
   inputContainer: {
     flexDirection: 'row',

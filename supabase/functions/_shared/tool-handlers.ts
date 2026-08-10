@@ -813,6 +813,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
       external_url:
         (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+      image_url: (item.images as Array<{url: string}>)?.[0]?.url ?? null,
     }));
 
     return { playlists };
@@ -897,7 +898,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     // Create the playlist — try both new and old endpoints with retries
     // /me/playlists is the Feb 2026 endpoint but intermittently returns 400
     // /users/{id}/playlists is the legacy endpoint but sometimes works
-    let createData: { id: string; name: string; external_urls: { spotify: string } } | null = null;
+    let createData: { id: string; name: string; external_urls: { spotify: string }; images?: Array<{ url: string }> } | null = null;
     const endpoints = [`/me/playlists`, `/users/${spotifyUserId}/playlists`];
     
     for (const endpoint of endpoints) {
@@ -912,7 +913,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
             description,
             public: false,
           }
-        )) as { id: string; name: string; external_urls: { spotify: string } };
+        )) as { id: string; name: string; external_urls: { spotify: string }; images?: Array<{ url: string }> };
         console.log(`[spotify_create_playlist] Success on ${endpoint}, playlist id: ${createData.id}`);
         break; // Success — stop trying
       } catch (err) {
@@ -951,6 +952,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       name: createData.name,
       external_url: createData.external_urls?.spotify ?? null,
       tracks_added: tracksAdded,
+      image_url: createData.images?.[0]?.url ?? null,
     };
   },
 
@@ -1094,6 +1096,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
           description: (item.description as string) || '',
           tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
           external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+          image_url: (item.images as Array<{url: string}>)?.[0]?.url ?? null,
         }));
 
         return {
@@ -1126,6 +1129,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
           description: (item.description as string) || '',
           tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
           external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+          image_url: (item.images as Array<{url: string}>)?.[0]?.url ?? null,
         }));
 
         return {
@@ -1161,6 +1165,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
           description: (item.description as string) || '',
           tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
           external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+          image_url: (item.images as Array<{url: string}>)?.[0]?.url ?? null,
         }));
 
         return {
@@ -1199,6 +1204,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
         description: (item.description as string) || '',
         tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
         external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+        image_url: (item.images as Array<{url: string}>)?.[0]?.url ?? null,
       }));
 
       return {
@@ -1230,6 +1236,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       description: (item.description as string) || '',
       tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
       external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+      image_url: (item.images as Array<{url: string}>)?.[0]?.url ?? null,
     }));
 
     return {

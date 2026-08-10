@@ -23,3 +23,12 @@ export interface ToolCall {
   status: ToolCallStatus;
   result?: Record<string, unknown>;
 }
+
+export interface ToolCallData {
+  id: string;
+  name: string;
+  arguments: string;
+  status: ToolCallStatus;
+  /** Raw JSON result string from tool execution (populated for auto-executed retrieval tools) */
+  result?: string;
+}
