@@ -31,6 +31,12 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
 
   const parsedArgs = useMemo(() => {
     try {
+      if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
+        return toolCall.arguments;
+      }
+      if (!toolCall.arguments || toolCall.arguments.trim() === '') {
+        return {};
+      }
       return JSON.parse(toolCall.arguments);
     } catch {
       return null;
@@ -43,7 +49,14 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
       case 'program_modify': return 'Modify Program';
       case 'program_activate': return 'Activate Program';
       case 'journal_draft': return 'Draft Journal Entry';
-      default: return toolCall.name;
+      case 'get_active_program': return 'Fetching Active Program';
+      case 'get_recovery_summary': return 'Fetching Recovery Data';
+      case 'get_recent_workouts_summary': return 'Fetching Recent Workouts';
+      case 'get_route_history': return 'Fetching Route History';
+      case 'get_session_history': return 'Fetching Session History';
+      case 'get_session_details': return 'Fetching Session Details';
+      case 'get_programs': return 'Fetching Programs';
+      default: return toolCall.name.replace(/_/g, ' ');
     }
   }, [toolCall.name]);
 

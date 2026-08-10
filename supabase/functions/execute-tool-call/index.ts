@@ -19,7 +19,7 @@ import { getToolHandler } from '../_shared/tool-handlers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const HANDLER_TIMEOUT_MS = 5_000;
+const HANDLER_TIMEOUT_MS = 25_000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -188,12 +188,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
-    // Generic execution error — keep message user-safe
+    // Generic execution error — log details for debugging, return safe message
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[execute-tool-call] Tool "${tool_name}" failed:`, errMsg);
     return jsonResponse({
       tool_call_id,
       error: {
         code: 'execution_error',
-        message: 'Tool execution failed. Please try again.',
+        message: `Tool execution failed: ${errMsg}`,
       },
     });
   }

@@ -124,22 +124,35 @@ export interface ResolvedMusicSeeds {
 }
 
 /**
- * Validates the combined seed count (max 5 per Spotify API constraint).
- * Throws a descriptive error if exceeded.
+ * Validates and truncates the combined seed count (max 5 per original Spotify API constraint).
+ * Since the Recommendations API is deprecated, we now truncate excess seeds
+ * rather than throwing, to gracefully degrade for playlist search.
  * Validates: Requirements 11.4, 11.5
  */
 export function validateSeedCount(
   genres: string[] = [],
   seedArtists: string[] = [],
   seedTracks: string[] = []
-): void {
+): { genres: string[]; seedArtists: string[]; seedTracks: string[] } {
   const total = genres.length + seedArtists.length + seedTracks.length;
-  if (total > 5) {
-    throw new Error(
-      `Combined seed count exceeds maximum of 5. ` +
-      `Provided: ${genres.length} genres, ${seedArtists.length} artists, ${seedTracks.length} tracks (total: ${total}).`
-    );
+  if (total <= 5) {
+    return { genres, seedArtists, seedTracks };
   }
+
+  // Truncate: prioritize genres first, then artists, then tracks
+  const result: string[] = [];
+  for (const g of genres) { if (result.length < 5) result.push(g); }
+  const truncatedGenres = result.slice(0, genres.length);
+  const remaining = 5 - truncatedGenres.length;
+  const truncatedArtists = seedArtists.slice(0, remaining);
+  const finalRemaining = remaining - truncatedArtists.length;
+  const truncatedTracks = seedTracks.slice(0, finalRemaining);
+
+  return {
+    genres: truncatedGenres,
+    seedArtists: truncatedArtists,
+    seedTracks: truncatedTracks,
+  };
 }
 
 /**
@@ -267,6 +280,7 @@ interface ProgramDayItemInput {
 interface ProgramDayInput {
   name: string;
   day_number: number;
+  planned_duration_minutes?: number | null;
   items: ProgramDayItemInput[];
 }
 
@@ -314,7 +328,7 @@ async function fetchProgramStructure(
 
   const { data: days, error: daysErr } = await supabase
     .from('program_days')
-    .select('id, day_number, name')
+    .select('id, day_number, name, planned_duration_minutes')
     .eq('program_id', programId)
     .order('day_number');
 
@@ -326,9 +340,9 @@ async function fetchProgramStructure(
   for (const day of days || []) {
     const { data: items } = await supabase
       .from('program_day_items')
-      .select('id, type, "order", exercise_id, block_id, target_sets, target_reps, target_weight, target_rpe, timer_config, notes')
+      .select('id, type, order_index, exercise_id, block_id, target_sets, target_reps, target_weight, target_rpe, timer_config, notes')
       .eq('program_day_id', day.id)
-      .order('"order"');
+      .order('order_index');
 
     daysWithItems.push({ ...day, items: items || [] });
   }
@@ -370,6 +384,7 @@ async function handleProgramCreate(
         program_id: programId,
         day_number: day.day_number,
         name: day.name,
+        planned_duration_minutes: day.planned_duration_minutes ?? null,
       })
       .select('id')
       .single();
@@ -407,7 +422,7 @@ async function handleProgramCreate(
           .insert({
             program_day_id: programDayId,
             type: 'block',
-            order,
+            order_index: order,
             block_id: block.id,
             target_sets: item.target_sets,
             target_reps: item.target_reps,
@@ -429,7 +444,7 @@ async function handleProgramCreate(
           .insert({
             program_day_id: programDayId,
             type: 'exercise',
-            order,
+            order_index: order,
             exercise_id: exerciseId,
             target_sets: item.target_sets,
             target_reps: item.target_reps,
@@ -570,13 +585,13 @@ async function handleProgramModify(
         // Get current max order for this day
         const { data: maxOrderResult } = await supabase
           .from('program_day_items')
-          .select('"order"')
+          .select('order_index')
           .eq('program_day_id', day.id)
-          .order('"order"', { ascending: false })
+          .order('order_index', { ascending: false })
           .limit(1)
           .single();
 
-        const nextOrder = (maxOrderResult?.order || 0) + 1;
+        const nextOrder = (maxOrderResult?.order_index || 0) + 1;
         const updates = change.updates || {};
 
         const { error } = await supabase
@@ -584,7 +599,7 @@ async function handleProgramModify(
           .insert({
             program_day_id: day.id,
             type: 'exercise',
-            order: nextOrder,
+            order_index: nextOrder,
             exercise_id: exerciseId,
             target_sets: (updates.target_sets as number) || 3,
             target_reps: (updates.target_reps as string) || '8-12',
@@ -789,7 +804,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       `/search?type=playlist&q=${encodedQuery}&limit=${limit}`
     )) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-    const items = data?.playlists?.items ?? [];
+    const items = (data?.playlists?.items ?? []).filter((item): item is Record<string, unknown> => item !== null);
 
     const playlists = items.map((item: Record<string, unknown>) => ({
       id: item.id,
@@ -801,6 +816,47 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     }));
 
     return { playlists };
+  },
+
+  /**
+   * spotify_search_tracks — Search Spotify for tracks matching a query.
+   * Returns track URIs that can be used with spotify_create_playlist or spotify_modify_playlist.
+   * Subject to the spotify_actions Permission_Category.
+   */
+  spotify_search_tracks: async (supabase, userId, args) => {
+    const query = args.query as string | undefined;
+    // Default to 1 for single-track lookups, clamp to Spotify's range (1-50)
+    const rawLimit = args.limit != null ? Number(args.limit) : 1;
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(rawLimit, 50) : 1;
+
+    if (!query) {
+      throw new Error('spotify_search_tracks requires a "query" argument');
+    }
+
+    const accessToken = await getSpotifyAccessToken(supabase, userId);
+
+    const encodedQuery = encodeURIComponent(query);
+    const data = (await spotifyApiRequest(
+      accessToken,
+      'GET',
+      `/search?type=track&q=${encodedQuery}&limit=${limit}`
+    )) as { tracks?: { items?: Array<Record<string, unknown>> } };
+
+    const items = (data?.tracks?.items ?? []).filter(
+      (item): item is Record<string, unknown> => item !== null
+    );
+
+    const tracks = items.map((item: Record<string, unknown>) => ({
+      id: item.id,
+      name: item.name,
+      artist: ((item.artists as Array<{ name: string }>)?.[0])?.name ?? 'Unknown',
+      album: (item.album as Record<string, unknown>)?.name ?? 'Unknown',
+      uri: item.uri,
+      duration_ms: item.duration_ms,
+      external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+    }));
+
+    return { tracks };
   },
 
   /**
@@ -818,43 +874,76 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     }
 
     const accessToken = await getSpotifyAccessToken(supabase, userId);
+    
+    // Debug: log stored scopes to verify what was actually granted
+    const { data: tokenRecord } = await supabase
+      .from('user_spotify_tokens')
+      .select('scopes, expires_at')
+      .eq('user_id', userId)
+      .single();
+    console.log(`[spotify_create_playlist] Stored scopes: ${JSON.stringify(tokenRecord?.scopes)}`);
+    console.log(`[spotify_create_playlist] Token expires_at: ${tokenRecord?.expires_at}`);
+    console.log(`[spotify_create_playlist] Token obtained (first 10 chars): ${accessToken.substring(0, 10)}...`);
 
     // Get the Spotify user ID
     const meData = (await spotifyApiRequest(
       accessToken,
       'GET',
       '/me'
-    )) as { id: string };
+    )) as { id: string; product?: string };
     const spotifyUserId = meData.id;
+    console.log(`[spotify_create_playlist] Spotify user: ${spotifyUserId}, product: ${(meData as Record<string, unknown>).product ?? 'unknown'}`);
 
-    // Create the playlist (private by default)
-    const createData = (await spotifyApiRequest(
-      accessToken,
-      'POST',
-      `/users/${spotifyUserId}/playlists`,
-      {
-        name,
-        description,
-        public: false,
+    // Create the playlist — try both new and old endpoints with retries
+    // /me/playlists is the Feb 2026 endpoint but intermittently returns 400
+    // /users/{id}/playlists is the legacy endpoint but sometimes works
+    let createData: { id: string; name: string; external_urls: { spotify: string } } | null = null;
+    const endpoints = [`/me/playlists`, `/users/${spotifyUserId}/playlists`];
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`[spotify_create_playlist] POST ${endpoint}, name: "${name}"`);
+        createData = (await spotifyApiRequest(
+          accessToken,
+          'POST',
+          endpoint,
+          {
+            name,
+            description,
+            public: false,
+          }
+        )) as { id: string; name: string; external_urls: { spotify: string } };
+        console.log(`[spotify_create_playlist] Success on ${endpoint}, playlist id: ${createData.id}`);
+        break; // Success — stop trying
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : '';
+        console.log(`[spotify_create_playlist] ${endpoint} failed: ${errMsg.substring(0, 80)}`);
+        // If this is the last endpoint, throw
+        if (endpoint === endpoints[endpoints.length - 1]) {
+          throw err;
+        }
+        // Otherwise try the next endpoint
       }
-    )) as {
-      id: string;
-      name: string;
-      external_urls: { spotify: string };
-    };
+    }
+
+    if (!createData) {
+      throw new Error('Failed to create playlist after retries');
+    }
 
     const playlistId = createData.id;
     let tracksAdded = 0;
 
     // Add tracks if provided
     if (trackUris.length > 0) {
+      console.log(`[spotify_create_playlist] Adding ${trackUris.length} tracks to playlist ${playlistId} via /items`);
       await spotifyApiRequest(
         accessToken,
         'POST',
-        `/playlists/${playlistId}/tracks`,
+        `/playlists/${playlistId}/items`,
         { uris: trackUris }
       );
       tracksAdded = trackUris.length;
+      console.log(`[spotify_create_playlist] Successfully added ${tracksAdded} tracks`);
     }
 
     return {
@@ -896,19 +985,19 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       await spotifyApiRequest(
         accessToken,
         'POST',
-        `/playlists/${playlistId}/tracks`,
+        `/playlists/${playlistId}/items`,
         { uris: addTracks }
       );
       tracksAdded = addTracks.length;
     }
 
-    // Remove tracks
+    // Remove tracks (Spotify /items endpoint expects { uris: ["spotify:track:..."] })
     if (removeTracks.length > 0) {
       await spotifyApiRequest(
         accessToken,
         'DELETE',
-        `/playlists/${playlistId}/tracks`,
-        { tracks: removeTracks.map((uri: string) => ({ uri })) }
+        `/playlists/${playlistId}/items`,
+        { uris: removeTracks }
       );
       tracksRemoved = removeTracks.length;
     }
@@ -948,8 +1037,11 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       );
     }
 
-    // 1. Validate seed count (throws if > 5) — Requirement 11.4
-    validateSeedCount(genres, seedArtists, seedTracks);
+    // 1. Truncate seeds to max 5 — Requirement 11.4
+    const truncatedSeeds = validateSeedCount(genres, seedArtists, seedTracks);
+    const effectiveGenres = truncatedSeeds.genres;
+    const effectiveArtists = truncatedSeeds.seedArtists;
+    const effectiveTracks = truncatedSeeds.seedTracks;
 
     // 2. Determine effective pace using fallback hierarchy — Requirement 4.1
     const effectivePace =
@@ -964,85 +1056,86 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     const accessToken = await getSpotifyAccessToken(supabase, userId);
 
     // 5. Check if seeds are provided
-    const hasSeeds = genres.length + seedArtists.length + seedTracks.length > 0;
+    const hasSeeds = effectiveGenres.length + effectiveArtists.length + effectiveTracks.length > 0;
 
     if (hasSeeds) {
-      // 5a. Resolve names → IDs — Requirement 11.6
-      const resolvedSeeds = await resolveSeeds(genres, seedArtists, seedTracks, accessToken);
+      // 5a. Build a search query from seed terms — Requirement 11.6
+      // Note: Spotify Recommendations API was deprecated (Nov 2024), so we use
+      // playlist search with seed information incorporated into the query.
+      const seedTerms: string[] = [];
+      if (effectiveGenres.length > 0) {
+        seedTerms.push(...effectiveGenres);
+      }
+      if (effectiveArtists.length > 0) {
+        seedTerms.push(...effectiveArtists);
+      }
+      if (effectiveTracks.length > 0) {
+        seedTerms.push(...effectiveTracks);
+      }
 
-      // 5b. Call Spotify Recommendations API with BPM + seeds
-      const recParams = new URLSearchParams();
-      if (resolvedSeeds.genres.length > 0) {
-        recParams.set('seed_genres', resolvedSeeds.genres.join(','));
-      }
-      if (resolvedSeeds.seed_artists.length > 0) {
-        recParams.set('seed_artists', resolvedSeeds.seed_artists.join(','));
-      }
-      if (resolvedSeeds.seed_tracks.length > 0) {
-        recParams.set('seed_tracks', resolvedSeeds.seed_tracks.join(','));
-      }
-      recParams.set('target_tempo', String((bpmRange.min + bpmRange.max) / 2));
-      recParams.set('min_tempo', String(bpmRange.min));
-      recParams.set('max_tempo', String(bpmRange.max));
-      recParams.set('limit', '20');
+      // Build a search query combining seeds with BPM/activity context
+      const seedQuery = `${seedTerms.join(' ')} ${bpmRange.label} ${bpmRange.min}-${bpmRange.max} bpm ${activityType}`;
+      const encodedSeedQuery = encodeURIComponent(seedQuery);
 
-      const recData = await spotifyApiRequest(
+      const seedSearchData = await spotifyApiRequest(
         accessToken,
         'GET',
-        `/recommendations?${recParams.toString()}`
-      ) as { tracks?: Array<Record<string, unknown>> };
+        `/search?type=playlist&q=${encodedSeedQuery}&limit=5`
+      ) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-      const tracks = recData?.tracks ?? [];
+      const seedItems = (seedSearchData?.playlists?.items ?? []).filter(
+        (item): item is Record<string, unknown> => item !== null
+      );
 
-      if (tracks.length > 0) {
+      if (seedItems.length > 0) {
+        const playlists = seedItems.map((item: Record<string, unknown>) => ({
+          id: item.id,
+          name: item.name,
+          description: (item.description as string) || '',
+          tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
+          external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+        }));
+
         return {
           activity_type: activityType,
           target_bpm_range: bpmRange,
           effective_pace_seconds_per_km: effectivePace,
           duration_minutes: durationMinutes ?? null,
           route_context_used: !!recentRouteSummary,
-          source: 'recommendations_with_seeds',
-          tracks: tracks.map((t: Record<string, unknown>) => ({
-            id: t.id,
-            name: t.name,
-            artist: ((t.artists as Array<{ name: string }>)?.[0])?.name ?? 'Unknown',
-            uri: t.uri,
-            external_url: (t.external_urls as Record<string, unknown>)?.spotify ?? null,
-          })),
+          source: 'playlist_search_with_seeds',
+          playlists,
         };
       }
 
-      // 5c. Retry without seeds — Requirement 15.4
-      const retryParams = new URLSearchParams();
-      retryParams.set('seed_genres', activityType === 'running' ? 'workout' : 'pop');
-      retryParams.set('target_tempo', String((bpmRange.min + bpmRange.max) / 2));
-      retryParams.set('min_tempo', String(bpmRange.min));
-      retryParams.set('max_tempo', String(bpmRange.max));
-      retryParams.set('limit', '20');
-
-      const retryData = await spotifyApiRequest(
+      // 5c. Retry without seeds — broader search
+      const fallbackSeedQuery = `${activityType} workout ${bpmRange.label}`;
+      const fallbackSeedData = await spotifyApiRequest(
         accessToken,
         'GET',
-        `/recommendations?${retryParams.toString()}`
-      ) as { tracks?: Array<Record<string, unknown>> };
+        `/search?type=playlist&q=${encodeURIComponent(fallbackSeedQuery)}&limit=5`
+      ) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-      const retryTracks = retryData?.tracks ?? [];
+      const fallbackSeedItems = (fallbackSeedData?.playlists?.items ?? []).filter(
+        (item): item is Record<string, unknown> => item !== null
+      );
 
-      if (retryTracks.length > 0) {
+      if (fallbackSeedItems.length > 0) {
+        const playlists = fallbackSeedItems.map((item: Record<string, unknown>) => ({
+          id: item.id,
+          name: item.name,
+          description: (item.description as string) || '',
+          tracks_total: (item.tracks as Record<string, unknown>)?.total ?? 0,
+          external_url: (item.external_urls as Record<string, unknown>)?.spotify ?? null,
+        }));
+
         return {
           activity_type: activityType,
           target_bpm_range: bpmRange,
           effective_pace_seconds_per_km: effectivePace,
           duration_minutes: durationMinutes ?? null,
           route_context_used: !!recentRouteSummary,
-          source: 'recommendations_without_seeds',
-          tracks: retryTracks.map((t: Record<string, unknown>) => ({
-            id: t.id,
-            name: t.name,
-            artist: ((t.artists as Array<{ name: string }>)?.[0])?.name ?? 'Unknown',
-            uri: t.uri,
-            external_url: (t.external_urls as Record<string, unknown>)?.spotify ?? null,
-          })),
+          source: 'playlist_search_without_seeds',
+          playlists,
         };
       }
     } else {
@@ -1057,7 +1150,9 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
         `/search?type=playlist&q=${encodedQuery}&limit=${searchLimit}`
       ) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-      const items = data?.playlists?.items ?? [];
+      const items = (data?.playlists?.items ?? []).filter(
+        (item): item is Record<string, unknown> => item !== null
+      );
 
       if (items.length > 0) {
         const playlists = items.map((item: Record<string, unknown>) => ({
@@ -1093,7 +1188,9 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       `/search?type=playlist&q=${encodeURIComponent(widenedQuery)}&limit=5`
     ) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-    const widenedItems = widenedData?.playlists?.items ?? [];
+    const widenedItems = (widenedData?.playlists?.items ?? []).filter(
+      (item): item is Record<string, unknown> => item !== null
+    );
 
     if (widenedItems.length > 0) {
       const playlists = widenedItems.map((item: Record<string, unknown>) => ({
@@ -1123,7 +1220,9 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       `/search?type=playlist&q=${encodeURIComponent(fallbackQuery)}&limit=5`
     ) as { playlists?: { items?: Array<Record<string, unknown>> } };
 
-    const fallbackItems = fallbackData?.playlists?.items ?? [];
+    const fallbackItems = (fallbackData?.playlists?.items ?? []).filter(
+      (item): item is Record<string, unknown> => item !== null
+    );
 
     const playlists = fallbackItems.map((item: Record<string, unknown>) => ({
       id: item.id,
@@ -1350,7 +1449,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     // Fetch program days
     const { data: days, error: daysErr } = await supabase
       .from('program_days')
-      .select('id, day_number, name')
+      .select('id, day_number, name, planned_duration_minutes')
       .eq('program_id', program.id)
       .order('day_number');
 
@@ -1363,9 +1462,9 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     for (const day of days || []) {
       const { data: items, error: itemsErr } = await supabase
         .from('program_day_items')
-        .select('id, type, "order", exercise_id, block_id, target_sets, target_reps, target_weight, target_rpe, timer_config, notes')
+        .select('id, type, order_index, exercise_id, block_id, target_sets, target_reps, target_weight, target_rpe, timer_config, notes')
         .eq('program_day_id', day.id)
-        .order('"order"');
+        .order('order_index');
 
       if (itemsErr) {
         throw new Error(`Failed to fetch items for day ${day.name}: ${itemsErr.message}`);
@@ -1401,7 +1500,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
 
         resolvedItems.push({
           type: item.type,
-          order: item.order,
+          order: item.order_index,
           exercise_name,
           block_name,
           block_type,
@@ -1419,6 +1518,7 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
         id: day.id,
         day_number: day.day_number,
         name: day.name,
+        planned_duration_minutes: day.planned_duration_minutes ?? null,
         items: resolvedItems,
       });
     }
@@ -1471,21 +1571,17 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       return { programs: [] };
     }
 
-    // For each program, get days_count and sessions_count
+    // For each program, get days and sessions_count
     const result = [];
     for (const program of programs) {
-      // Count program days
-      const { count: daysCount } = await supabase
-        .from('program_days')
-        .select('id', { count: 'exact', head: true })
-        .eq('program_id', program.id);
-
-      // Count completed sessions (via program_days)
+      // Fetch program days with planned_duration_minutes
       const { data: programDays } = await supabase
         .from('program_days')
-        .select('id')
-        .eq('program_id', program.id);
+        .select('id, day_number, name, planned_duration_minutes')
+        .eq('program_id', program.id)
+        .order('day_number');
 
+      // Count completed sessions (via program_days)
       let sessionsCount = 0;
       if (programDays && programDays.length > 0) {
         const dayIds = programDays.map((d: { id: string }) => d.id);
@@ -1503,8 +1599,13 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
         status: program.status,
         created_at: program.created_at,
         updated_at: program.updated_at,
-        days_count: daysCount ?? 0,
+        days_count: programDays?.length ?? 0,
         sessions_count: sessionsCount,
+        days: (programDays || []).map((d: { day_number: number; name: string; planned_duration_minutes: number | null }) => ({
+          day_number: d.day_number,
+          name: d.name,
+          planned_duration_minutes: d.planned_duration_minutes ?? null,
+        })),
       });
     }
 

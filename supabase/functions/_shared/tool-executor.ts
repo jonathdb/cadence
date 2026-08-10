@@ -57,6 +57,7 @@ const TOOL_PERMISSION_MAP: Record<string, PermissionCategory> = {
   program_activate: 'program_edits',
   journal_draft: 'journal_edits',
   spotify_search_playlist: 'spotify_actions',
+  spotify_search_tracks: 'spotify_actions',
   spotify_create_playlist: 'spotify_actions',
   spotify_modify_playlist: 'spotify_actions',
   spotify_suggest_pace_playlist: 'spotify_actions',

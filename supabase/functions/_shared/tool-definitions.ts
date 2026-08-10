@@ -34,6 +34,10 @@ export const toolDefinitions: ToolDefinition[] = [
               properties: {
                 name: { type: 'string', description: 'Day name (e.g. "Push Day")' },
                 day_number: { type: 'integer', description: 'Order index (1-based)' },
+                planned_duration_minutes: {
+                  type: 'integer',
+                  description: 'Planned session duration in minutes (1-480). Omit if unknown.',
+                },
                 items: {
                   type: 'array',
                   description: 'Exercises and blocks for this day',
@@ -75,7 +79,8 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'program_modify',
       description:
-        'Modify the user\'s active program. Specify the changes to apply.',
+        'Modify the user\'s active program. Specify the changes to apply. ' +
+        'The modify_day action accepts updates including name and planned_duration_minutes (1-480 or null).',
       parameters: {
         type: 'object',
         properties: {
@@ -179,9 +184,25 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'spotify_search_tracks',
+      description:
+        'Search Spotify for tracks matching a query. Returns track URIs that can be passed to spotify_create_playlist or spotify_modify_playlist. Always use this tool to get real track URIs before creating or modifying playlists — do NOT invent track URIs.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query (e.g. "Blitzkrieg Bop Ramones" or "running 170 bpm rock")' },
+          limit: { type: 'integer', description: 'Max results (default 10, max 50)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'spotify_create_playlist',
       description:
-        'Create a new Spotify playlist for the user.',
+        'Create a new Spotify playlist for the user. IMPORTANT: Use spotify_search_tracks first to get valid track URIs — do not fabricate URIs.',
       parameters: {
         type: 'object',
         properties: {
@@ -334,7 +355,8 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'get_active_program',
       description:
-        'Retrieve the user\'s currently active training program with full structure (days, exercises, blocks, targets). Returns null if no active program exists.',
+        'Retrieve the user\'s currently active training program with full structure ' +
+        '(days with planned_duration_minutes, exercises, blocks, targets). Returns null if no active program exists.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -342,7 +364,9 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'get_programs',
-      description: 'List all of the user\'s programs (active, draft, archived) with summary info.',
+      description:
+        'List all of the user\'s programs (active, draft, archived) with summary info ' +
+        'and day details including planned_duration_minutes.',
       parameters: {
         type: 'object',
         properties: {

@@ -1,6 +1,9 @@
--- Grant table-level access to authenticated and anon roles.
+-- Grant table-level access to authenticated, anon, and service_role.
 -- RLS policies still control row-level access — these grants just allow
 -- the roles to interact with the tables at all.
+-- service_role bypasses RLS but still needs table-level grants.
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON chat_messages TO service_role;
 
 -- Core tables
 GRANT SELECT, INSERT, UPDATE, DELETE ON exercises TO authenticated;

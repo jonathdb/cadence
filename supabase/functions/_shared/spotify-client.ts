@@ -157,6 +157,10 @@ export async function spotifyApiRequest(
 
   if (!response.ok) {
     const errorBody = await response.text();
+    // 401 means token expired/invalid — user needs to reconnect
+    if (response.status === 401) {
+      throw new SpotifyReconnectError();
+    }
     throw new Error(
       `Spotify API error (${response.status}): ${errorBody}`
     );

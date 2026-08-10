@@ -16,11 +16,11 @@
  */
 
 import {
-  AuthRequest,
-  exchangeCodeAsync,
-  makeRedirectUri,
-  revokeAsync,
-  TokenTypeHint,
+    AuthRequest,
+    exchangeCodeAsync,
+    makeRedirectUri,
+    revokeAsync,
+    TokenTypeHint,
 } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -90,11 +90,15 @@ export async function connectSpotify(): Promise<SpotifyAuth | null> {
   console.log('[Spotify] redirectUri:', redirectUri);
 
   // Build the auth request with PKCE enabled (default)
+  // show_dialog forces Spotify to show the consent screen, ensuring new scopes are granted
   const request = new AuthRequest({
     clientId: SPOTIFY_CLIENT_ID,
     scopes: SPOTIFY_SCOPES,
     redirectUri,
     usePKCE: true,
+    extraParams: {
+      show_dialog: 'true',
+    },
   });
 
   // Prompt the user to authenticate via system browser
@@ -167,9 +171,11 @@ export async function disconnectSpotify(userId: string): Promise<void> {
 
   // Attempt to revoke the refresh token (preferred) or access token
   // Spotify may not support revocation for all token types, but we try.
+  // Note: Revocation is skipped on web due to CORS restrictions on Spotify's endpoint.
   const tokenToRevoke = data.refresh_token || data.access_token;
+  const isWeb = typeof window !== 'undefined' && !!window.document;
 
-  if (tokenToRevoke) {
+  if (tokenToRevoke && !isWeb) {
     try {
       await revokeAsync(
         {
@@ -216,6 +222,7 @@ export async function getSpotifyConnectionStatus(userId: string): Promise<{
   expiresAt: number | null;
   scopes: string[] | null;
   accountName: string | null;
+  needsReconnect: boolean;
 }> {
   const { data, error } = await supabase
     .from('user_spotify_tokens')
@@ -228,30 +235,63 @@ export async function getSpotifyConnectionStatus(userId: string): Promise<{
   }
 
   if (!data) {
-    return { connected: false, expiresAt: null, scopes: null, accountName: null };
+    return { connected: false, expiresAt: null, scopes: null, accountName: null, needsReconnect: false };
   }
 
-  // A connection is valid if either:
-  // 1. The access token hasn't expired yet, OR
-  // 2. A refresh token exists (Edge Functions handle refresh server-side)
+  // Check if token is expired
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() / 1000 : null;
-  const hasRefreshToken = !!data.refresh_token;
   const isExpired = expiresAt !== null && expiresAt < now;
 
-  const connected = !isExpired || hasRefreshToken;
+  // If expired, attempt to refresh before checking status
+  let activeToken = data.access_token;
+  if (isExpired && data.refresh_token) {
+    const refreshedToken = await refreshSpotifyToken(userId);
+    if (refreshedToken) {
+      activeToken = refreshedToken;
+    } else {
+      // Refresh failed — user needs to reconnect
+      return {
+        connected: false,
+        expiresAt,
+        scopes: data.scopes ?? null,
+        accountName: null,
+        needsReconnect: true,
+      };
+    }
+  } else if (isExpired && !data.refresh_token) {
+    // No refresh token — must reconnect
+    return {
+      connected: false,
+      expiresAt,
+      scopes: data.scopes ?? null,
+      accountName: null,
+      needsReconnect: true,
+    };
+  }
 
-  // Fetch account name from Spotify /me endpoint if we have a valid token
+  // Fetch account name from Spotify /me endpoint with the valid token
   let accountName: string | null = null;
-  if (connected && data.access_token) {
-    accountName = await fetchSpotifyAccountName(data.access_token);
+  if (activeToken) {
+    accountName = await fetchSpotifyAccountName(activeToken);
+    // If /me fails even after refresh, token may be revoked
+    if (!accountName && isExpired) {
+      return {
+        connected: false,
+        expiresAt,
+        scopes: data.scopes ?? null,
+        accountName: null,
+        needsReconnect: true,
+      };
+    }
   }
 
   return {
-    connected,
+    connected: true,
     expiresAt,
     scopes: data.scopes ?? null,
     accountName,
+    needsReconnect: false,
   };
 }
 

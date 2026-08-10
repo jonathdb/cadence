@@ -30,7 +30,7 @@ interface ToolCallMessage {
 }
 
 interface RequestBody {
-  message: string;
+  message?: string;
   conversation: ChatMessage[];
   provider?: 'openai' | 'anthropic';
 }
@@ -128,6 +128,7 @@ Guidelines:
 - Ask clarifying questions if the user's request is ambiguous
 - Reference the user's history and recovery data when making recommendations
 - Before suggesting program modifications, exercises, or playlists, call get_active_program to understand the user's current training structure.
+- When the user requests a playlist for a specific program day (e.g., "Day 2 run"), use the get_active_program result to determine the session type, exercises, and any notes/timer_config that indicate duration. If the program day has timer_config with duration_seconds or work_seconds, calculate the duration from that. If the day name suggests a session type (e.g., "Easy Run", "Tempo Run", "Long Run"), infer the session type from the name. Only ask the user for information that cannot be determined from the program structure.
 - When the user asks about progress, trends, volume changes, personal records, or consistency, call get_session_history.
 - When the user references a specific past workout by date or name, or asks how a session went, call get_session_details with the session ID.
 - When the user asks about past programs, requests a comparison between programs, or when proposing a new program and you need historical context, call get_programs.
@@ -142,6 +143,7 @@ Guidelines:
 - Music preferences: When a user requests a playlist and has not mentioned music preferences in the conversation, ask what genres, artists, or songs they enjoy for their workout. If the user mentions genres (e.g., "electronic", "hip-hop"), artist names (e.g., "The Weeknd", "Daft Punk"), or song titles (e.g., "Blinding Lights") anywhere in the conversation, extract those as music preferences and pass them as the genres, seed_artists, and seed_tracks parameters to spotify_suggest_pace_playlist. Music preferences are optional refinements — if the user declines to state preferences or does not answer, proceed with the playlist suggestion using BPM alone.
 - When extracting music preferences from conversation, apply at most 5 total seeds (combined genres + artists + tracks). If the user mentions more than 5 preferences, select the 5 most recently mentioned and inform the user that Spotify allows a maximum of 5 seed values at a time.
 - If the user contradicts a previous music preference (e.g., "actually, not hip-hop, make it rock"), use the most recent preference and discard the contradicted one.
+- After creating a playlist via spotify_create_playlist, always include the external_url from the tool result in your response so the user can open it directly in Spotify.
 - Never expose or reference API keys, internal systems, or technical implementation details to the user`;
 }
 
@@ -182,15 +184,65 @@ async function callAnthropic(
   messages: ChatMessage[],
   signal: AbortSignal
 ): Promise<Response> {
-  // Anthropic uses a separate system param and different message format
-  const anthropicMessages = messages
-    .filter((m) => m.role !== 'system')
-    .map((m) => ({
-      role: m.role === 'tool' ? 'user' : m.role,
-      content: m.role === 'tool'
-        ? [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }]
-        : m.content,
-    }));
+  // Anthropic uses a separate system param and different message format.
+  // Key differences from OpenAI:
+  // - Assistant messages with tool_calls become content blocks with type: "tool_use"
+  // - Tool result messages become user messages with type: "tool_result" content blocks
+  // - tool_result must directly follow an assistant message containing the matching tool_use
+
+  const anthropicMessages: { role: string; content: any }[] = [];
+
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+
+    if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+      // Assistant message with tool calls → convert to Anthropic tool_use content blocks
+      const contentBlocks: any[] = [];
+      if (m.content) {
+        contentBlocks.push({ type: 'text', text: m.content });
+      }
+      for (const tc of m.tool_calls) {
+        let inputObj = {};
+        try {
+          inputObj = typeof tc.function.arguments === 'object'
+            ? tc.function.arguments
+            : JSON.parse(tc.function.arguments || '{}');
+        } catch {
+          inputObj = {};
+        }
+        contentBlocks.push({
+          type: 'tool_use',
+          id: tc.id,
+          name: tc.function.name,
+          input: inputObj,
+        });
+      }
+      anthropicMessages.push({ role: 'assistant', content: contentBlocks });
+    } else if (m.role === 'tool') {
+      // Tool result → user message with tool_result content block
+      // Anthropic requires these grouped into a single user message if consecutive
+      const lastMsg = anthropicMessages[anthropicMessages.length - 1];
+      const toolResultBlock = {
+        type: 'tool_result',
+        tool_use_id: m.tool_call_id,
+        content: m.content,
+      };
+
+      if (lastMsg && lastMsg.role === 'user' && Array.isArray(lastMsg.content) &&
+          lastMsg.content.length > 0 && lastMsg.content[0].type === 'tool_result') {
+        // Merge consecutive tool results into one user message
+        lastMsg.content.push(toolResultBlock);
+      } else {
+        anthropicMessages.push({ role: 'user', content: [toolResultBlock] });
+      }
+    } else {
+      // Regular user or assistant text message
+      anthropicMessages.push({
+        role: m.role,
+        content: m.content,
+      });
+    }
+  }
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -426,8 +478,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return errorResponse(400, 'invalid_body', 'Request body must be valid JSON');
   }
 
-  if (!body.message || typeof body.message !== 'string') {
-    return errorResponse(400, 'invalid_body', 'Message field is required and must be a string');
+  if (!body.message && (!body.conversation || body.conversation.length === 0)) {
+    return errorResponse(400, 'invalid_body', 'Message field or conversation context is required');
   }
 
   const provider = body.provider || 'openai';
@@ -444,20 +496,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Build conversation messages
   const messages: ChatMessage[] = [
     ...(body.conversation || []),
-    { role: 'user', content: body.message },
+    ...(body.message ? [{ role: 'user' as const, content: body.message }] : []),
   ];
 
-  // Store the user's message
-  try {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    await supabase.from('chat_messages').insert({
-      user_id: userId,
-      role: 'user',
-      content: body.message,
-    });
-  } catch (err) {
-    console.error('Failed to store user message:', err);
-    // Non-fatal: continue with the AI call
+  // Store the user's message (only if there is one)
+  if (body.message) {
+    try {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      await supabase.from('chat_messages').insert({
+        user_id: userId,
+        role: 'user',
+        content: body.message,
+      });
+    } catch (err) {
+      console.error('Failed to store user message:', err);
+      // Non-fatal: continue with the AI call
+    }
   }
 
   // Call the AI provider with a 30s timeout

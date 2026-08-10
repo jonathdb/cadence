@@ -13,11 +13,12 @@ import {
     ActivityIndicator,
     FlatList,
     KeyboardAvoidingView,
+    Linking,
     Platform,
     Pressable,
     StyleSheet,
     TextInput,
-    View,
+    View
 } from 'react-native';
 
 import { ProgramProposal } from '@/components/ProgramProposal';
@@ -45,6 +46,22 @@ interface ToolCallData {
   arguments: string;
   status: 'pending_approval' | 'approved' | 'auto_applied' | 'rejected';
 }
+
+/** Tools that are read-only retrieval and should be auto-executed without approval */
+const RETRIEVAL_TOOLS = new Set([
+  'get_active_program',
+  'get_recovery_summary',
+  'get_recent_workouts_summary',
+  'get_route_history',
+  'get_session_history',
+  'get_session_details',
+  'get_programs',
+  'spotify_search_playlist',
+  'spotify_search_tracks',
+  'spotify_suggest_pace_playlist',
+  'spotify_create_playlist',
+  'spotify_modify_playlist',
+]);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -121,7 +138,6 @@ export default function ChatScreen() {
 
       try {
         await supabase.from('chat_messages').insert({
-          id: msg.id,
           user_id: session.user.id,
           role: msg.role,
           content: msg.content,
@@ -249,7 +265,7 @@ export default function ChatScreen() {
                 id: tc.id,
                 name: tc.name,
                 arguments: tc.arguments,
-                status: 'pending_approval' as const,
+                status: RETRIEVAL_TOOLS.has(tc.name) ? 'auto_applied' as const : 'pending_approval' as const,
               }));
               setMessages((prev) =>
                 prev.map((m) =>
@@ -274,6 +290,12 @@ export default function ChatScreen() {
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       };
       persistMessage(finalAssistantMsg);
+
+      // Auto-execute retrieval tools and send results back to continue conversation
+      const retrievalCalls = toolCalls.filter((tc) => RETRIEVAL_TOOLS.has(tc.name));
+      if (retrievalCalls.length > 0) {
+        await autoExecuteRetrievalTools(retrievalCalls, assistantContent, toolCalls, [...conversationContext, { role: 'user', content: text }]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
     } finally {
@@ -282,15 +304,206 @@ export default function ChatScreen() {
   }, [inputText, isStreaming, messages, persistMessage]);
 
   // ---------------------------------------------------------------------------
+  // Auto-execute retrieval tools and continue the conversation
+  // ---------------------------------------------------------------------------
+
+  const autoExecuteRetrievalTools = useCallback(async (
+    retrievalCalls: ToolCallData[],
+    assistantContent: string,
+    allToolCalls: ToolCallData[],
+    conversationSoFar: { role: string; content: string }[],
+  ) => {
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    if (!currentSession) return;
+
+    // Execute each retrieval tool call
+    const toolResults: { tool_call_id: string; name: string; content: string }[] = [];
+
+    for (const tc of retrievalCalls) {
+      try {
+        let args: Record<string, unknown> = {};
+        if (typeof tc.arguments === 'object' && tc.arguments !== null) {
+          args = tc.arguments as unknown as Record<string, unknown>;
+        } else if (tc.arguments && tc.arguments.trim() !== '') {
+          args = JSON.parse(tc.arguments);
+        }
+
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+        const response = await fetch(`${supabaseUrl}/functions/v1/execute-tool-call`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${currentSession.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tool_call_id: tc.id,
+            tool_name: tc.name,
+            arguments: args,
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          toolResults.push({
+            tool_call_id: tc.id,
+            name: tc.name,
+            content: JSON.stringify(result),
+          });
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          toolResults.push({
+            tool_call_id: tc.id,
+            name: tc.name,
+            content: JSON.stringify({ error: errorData?.error?.message || `Failed (${response.status})` }),
+          });
+        }
+      } catch (err) {
+        toolResults.push({
+          tool_call_id: tc.id,
+          name: tc.name,
+          content: JSON.stringify({ error: err instanceof Error ? err.message : 'Execution failed' }),
+        });
+      }
+    }
+
+    // Build a follow-up conversation with tool results and send back to the AI
+    const followUpConversation = [
+      ...conversationSoFar,
+      {
+        role: 'assistant',
+        content: assistantContent || '',
+        tool_calls: allToolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: typeof tc.arguments === 'string' ? tc.arguments || '{}' : JSON.stringify(tc.arguments) },
+        })),
+      },
+      ...toolResults.map((tr) => ({
+        role: 'tool',
+        content: tr.content,
+        tool_call_id: tr.tool_call_id,
+        name: tr.name,
+      })),
+    ];
+
+    // Send a follow-up request to the AI with the tool results
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentSession.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: '',
+          conversation: followUpConversation,
+          provider: 'anthropic',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setError(errorData?.error?.message || `Error continuing after tool: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let followUpContent = '';
+      let followUpToolCalls: ToolCallData[] = [];
+      const followUpMsgId = `assistant-${Date.now()}`;
+
+      setMessages((prev) => [
+        ...prev,
+        { id: followUpMsgId, role: 'assistant', content: '' },
+      ]);
+
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') break;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'content') {
+              followUpContent += parsed.content;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === followUpMsgId ? { ...m, content: followUpContent } : m
+                )
+              );
+            } else if (parsed.type === 'tool_calls') {
+              followUpToolCalls = parsed.tool_calls.map((tc: any) => ({
+                id: tc.id,
+                name: tc.name,
+                arguments: tc.arguments,
+                status: RETRIEVAL_TOOLS.has(tc.name) ? 'auto_applied' as const : 'pending_approval' as const,
+              }));
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === followUpMsgId ? { ...m, toolCalls: followUpToolCalls } : m
+                )
+              );
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+
+      const followUpMsg: DisplayMessage = {
+        id: followUpMsgId,
+        role: 'assistant',
+        content: followUpContent,
+        toolCalls: followUpToolCalls.length > 0 ? followUpToolCalls : undefined,
+      };
+      persistMessage(followUpMsg);
+
+      // If there are more retrieval tools in the follow-up, recurse
+      const moreRetrievals = followUpToolCalls.filter((tc) => RETRIEVAL_TOOLS.has(tc.name));
+      if (moreRetrievals.length > 0) {
+        const extendedConversation = [
+          ...followUpConversation,
+          { role: 'assistant', content: followUpContent },
+        ];
+        await autoExecuteRetrievalTools(moreRetrievals, followUpContent, followUpToolCalls, extendedConversation);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to continue conversation after tool execution');
+    }
+  }, [persistMessage]);
+
+  // ---------------------------------------------------------------------------
   // Handle tool call approval
   // ---------------------------------------------------------------------------
 
   const handleApproveToolCall = useCallback(async (messageId: string, toolCall: ToolCallData) => {
     let args: Record<string, unknown>;
     try {
-      args = JSON.parse(toolCall.arguments);
-    } catch {
-      setError('Failed to parse tool call data');
+      // arguments may already be an object (loaded from JSONB in DB) or a JSON string (from stream)
+      if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
+        args = toolCall.arguments as unknown as Record<string, unknown>;
+      } else if (!toolCall.arguments || toolCall.arguments.trim() === '') {
+        // Empty arguments (e.g., get_active_program with no params)
+        args = {};
+      } else {
+        args = JSON.parse(toolCall.arguments);
+      }
+    } catch (e) {
+      console.error('Failed to parse tool call arguments:', JSON.stringify(toolCall.arguments), e);
+      setError('Failed to parse tool call data. The AI response may have been incomplete — try sending your message again.');
       return;
     }
 
@@ -319,13 +532,13 @@ export default function ChatScreen() {
       } else if (toolCall.name === 'program_activate') {
         await handleProgramActivate(args, currentSession);
       } else if (toolCall.name === 'program_modify') {
-        await handleProgramModify(args, currentSession);
+        await handleProgramModify(toolCall.id, args, currentSession);
       } else if (toolCall.name === 'journal_draft') {
-        await handleJournalDraft(args, currentSession);
+        await handleJournalDraft(toolCall.id, args, currentSession);
       } else if (toolCall.name.startsWith('spotify_')) {
-        await handleSpotifyAction(toolCall.name, args, currentSession);
+        await handleSpotifyAction(toolCall.id, toolCall.name, args, currentSession);
       } else {
-        await handleGenericToolCall(toolCall.name, args, currentSession);
+        await handleGenericToolCall(toolCall.id, toolCall.name, args, currentSession);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to execute tool call');
@@ -471,6 +684,7 @@ export default function ChatScreen() {
   };
 
   const handleProgramModify = async (
+    toolCallId: string,
     args: Record<string, unknown>,
     currentSession: { user: { id: string }; access_token: string },
   ) => {
@@ -482,6 +696,7 @@ export default function ChatScreen() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        tool_call_id: toolCallId,
         tool_name: 'program_modify',
         arguments: args,
       }),
@@ -503,6 +718,7 @@ export default function ChatScreen() {
   };
 
   const handleJournalDraft = async (
+    toolCallId: string,
     args: Record<string, unknown>,
     currentSession: { user: { id: string }; access_token: string },
   ) => {
@@ -514,6 +730,7 @@ export default function ChatScreen() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        tool_call_id: toolCallId,
         tool_name: 'journal_draft',
         arguments: args,
       }),
@@ -535,6 +752,7 @@ export default function ChatScreen() {
   };
 
   const handleSpotifyAction = async (
+    toolCallId: string,
     toolName: string,
     args: Record<string, unknown>,
     currentSession: { user: { id: string }; access_token: string },
@@ -547,6 +765,7 @@ export default function ChatScreen() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        tool_call_id: toolCallId,
         tool_name: toolName,
         arguments: args,
       }),
@@ -569,6 +788,7 @@ export default function ChatScreen() {
   };
 
   const handleGenericToolCall = async (
+    toolCallId: string,
     toolName: string,
     args: Record<string, unknown>,
     currentSession: { user: { id: string }; access_token: string },
@@ -581,6 +801,7 @@ export default function ChatScreen() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        tool_call_id: toolCallId,
         tool_name: toolName,
         arguments: args,
       }),
@@ -617,8 +838,55 @@ export default function ChatScreen() {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Clear chat history
+  // ---------------------------------------------------------------------------
+
+  const handleClearChat = useCallback(async () => {
+    if (!session?.user?.id) return;
+
+    // Clear local state immediately
+    setMessages([]);
+    setError(null);
+
+    // Delete from DB
+    try {
+      await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('user_id', session.user.id);
+    } catch {
+      console.warn('Failed to delete chat history from DB');
+    }
+  }, [session?.user?.id]);
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  /** Renders text with clickable URLs */
+  const renderTextWithLinks = (text: string, textColor: string, linkColor: string) => {
+    const urlRegex = /(https?:\/\/[^\s)]+)/g;
+    const parts = text.split(urlRegex);
+
+    if (parts.length === 1) return text;
+
+    return parts.map((part, index) => {
+      if (urlRegex.test(part)) {
+        // Reset regex lastIndex since we reuse it
+        urlRegex.lastIndex = 0;
+        return (
+          <ThemedText
+            key={index}
+            style={{ color: linkColor, textDecorationLine: 'underline' }}
+            onPress={() => Linking.openURL(part)}
+          >
+            {part}
+          </ThemedText>
+        );
+      }
+      return part;
+    });
+  };
 
   const renderMessage = useCallback(({ item }: { item: DisplayMessage }) => {
     const isUser = item.role === 'user';
@@ -643,11 +911,11 @@ export default function ChatScreen() {
                 !isUser && !isSystem && { color: theme.chatBubbleAssistantText },
               ]}
             >
-              {item.content}
+              {renderTextWithLinks(item.content, isUser ? theme.chatBubbleUserText : isSystem ? theme.chatBubbleSystemText : theme.chatBubbleAssistantText, theme.accent)}
             </ThemedText>
           ) : null}
 
-          {item.toolCalls?.map((tc) => (
+          {item.toolCalls?.filter((tc) => !RETRIEVAL_TOOLS.has(tc.name)).map((tc) => (
             <ProgramProposal
               key={tc.id}
               toolCall={tc}
@@ -677,6 +945,21 @@ export default function ChatScreen() {
         style={styles.flex}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
+        {/* Header with clear chat */}
+        {messages.length > 0 && (
+          <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}>
+            <Pressable
+              style={[styles.clearButton, { backgroundColor: theme.backgroundElement }]}
+              onPress={handleClearChat}
+              disabled={isStreaming}
+              accessibilityRole="button"
+              accessibilityLabel="Start new chat"
+            >
+              <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>New Chat</ThemedText>
+            </Pressable>
+          </View>
+        )}
+
         {error && (
           <View style={[styles.errorBanner, { backgroundColor: theme.errorSoft }]}>
             <ThemedText style={{ color: theme.error, fontSize: 13, textAlign: 'center' }}>{error}</ThemedText>
@@ -753,6 +1036,19 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+    borderBottomWidth: 1,
+  },
+  clearButton: {
+    paddingHorizontal: Spacing.two + 4,
+    paddingVertical: Spacing.one + 2,
+    borderRadius: Radii.medium,
   },
   messageList: {
     padding: Spacing.three,

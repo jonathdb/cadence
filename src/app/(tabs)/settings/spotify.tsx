@@ -23,6 +23,7 @@ export default function SpotifyScreen() {
   const { session } = useAuth();
   const theme = useTheme();
   const [isConnected, setIsConnected] = useState(false);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [scopes, setScopes] = useState<string[] | null>(null);
   const [accountName, setAccountName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +36,7 @@ export default function SpotifyScreen() {
     try {
       const status = await getSpotifyConnectionStatus(session.user.id);
       setIsConnected(status.connected);
+      setNeedsReconnect(status.needsReconnect);
       setScopes(status.scopes);
       setAccountName(status.accountName);
       setError(null);
@@ -57,6 +59,7 @@ export default function SpotifyScreen() {
       const result = await connectSpotify();
       if (result) {
         setIsConnected(true);
+        setNeedsReconnect(false);
         setScopes(result.scopes);
         // Reload status to get account name from Spotify /me endpoint
         if (session?.user.id) {
@@ -75,32 +78,38 @@ export default function SpotifyScreen() {
   async function handleDisconnect() {
     if (!session?.user.id) return;
 
-    Alert.alert(
-      'Disconnect Spotify',
-      'This will revoke access and remove stored tokens. The Agent will no longer be able to manage playlists.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            setIsProcessing(true);
-            setError(null);
+    // Alert.alert doesn't work on web — use window.confirm as fallback
+    const confirmed =
+      typeof window !== 'undefined' && window.confirm
+        ? window.confirm(
+            'Disconnect Spotify?\n\nThis will revoke access and remove stored tokens. The Agent will no longer be able to manage playlists.'
+          )
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Disconnect Spotify',
+              'This will revoke access and remove stored tokens. The Agent will no longer be able to manage playlists.',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Disconnect', style: 'destructive', onPress: () => resolve(true) },
+              ]
+            );
+          });
 
-            try {
-              await disconnectSpotify(session.user.id);
-              setIsConnected(false);
-              setScopes(null);
-              setAccountName(null);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : 'Failed to disconnect Spotify');
-            } finally {
-              setIsProcessing(false);
-            }
-          },
-        },
-      ]
-    );
+    if (!confirmed) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      await disconnectSpotify(session.user.id);
+      setIsConnected(false);
+      setScopes(null);
+      setAccountName(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to disconnect Spotify');
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   if (isLoading) {
@@ -162,7 +171,28 @@ export default function SpotifyScreen() {
 
         {/* Action Button */}
         <View style={styles.section}>
-          {isConnected ? (
+          {needsReconnect ? (
+            <>
+              <View style={[styles.warningContainer, { backgroundColor: theme.errorSoft }]}>
+                <ThemedText style={[styles.warningText, { color: theme.error }]}>
+                  Your Spotify connection has expired or been revoked. Please reconnect to continue using playlist features.
+                </ThemedText>
+              </View>
+              <Pressable
+                style={[styles.connectButton, { backgroundColor: theme.accent }, isProcessing && styles.buttonDisabled]}
+                onPress={handleConnect}
+                disabled={isProcessing}
+                accessibilityRole="button"
+                accessibilityLabel="Reconnect Spotify account"
+              >
+                {isProcessing ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <ThemedText style={styles.buttonText}>Reconnect Spotify</ThemedText>
+                )}
+              </Pressable>
+            </>
+          ) : isConnected ? (
             <Pressable
               style={[styles.disconnectButton, { backgroundColor: theme.error }, isProcessing && styles.buttonDisabled]}
               onPress={handleDisconnect}
@@ -192,6 +222,13 @@ export default function SpotifyScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* Token info */}
+        <View style={[styles.statusCard, { backgroundColor: theme.backgroundElement }]}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Spotify access tokens expire after 1 hour. Cadence automatically refreshes them using the stored refresh token. If you revoke access from your Spotify account settings, you'll need to reconnect here.
+          </ThemedText>
+        </View>
       </ScrollView>
     </ThemedView>
   );
@@ -218,6 +255,15 @@ const styles = StyleSheet.create({
     borderRadius: Radii.medium,
   },
   errorText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  warningContainer: {
+    padding: Spacing.two,
+    borderRadius: Radii.medium,
+    marginBottom: Spacing.two,
+  },
+  warningText: {
     fontSize: 14,
     textAlign: 'center',
   },
