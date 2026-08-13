@@ -98,6 +98,64 @@ export default function ProgramLibraryScreen() {
     fetchPrograms();
   }, [fetchPrograms]);
 
+  const handlePublishTemplate = useCallback(
+    (program: ProgramListItem) => {
+      if (!session) return;
+
+      Alert.prompt
+        ? Alert.prompt(
+            'Publish as Template',
+            'Enter a title for the shareable template:',
+            async (title: string) => {
+              if (!title?.trim()) return;
+              try {
+                const result = await publishTemplate(supabase, session.user.id, program.id, {
+                  title: title.trim(),
+                  description: `${program.name} — ${program.program_days.length} day program`,
+                });
+                Alert.alert(
+                  'Published!',
+                  `Template available at: cadence.app/t/${result.slug}`,
+                  [{ text: 'OK' }]
+                );
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : 'Publish failed';
+                Alert.alert('Error', msg);
+              }
+            },
+            'plain-text',
+            program.name
+          )
+        : // Android fallback — Alert.prompt not available
+          Alert.alert(
+            'Publish as Template',
+            `Publish "${program.name}" as a shareable template?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Publish',
+                onPress: async () => {
+                  try {
+                    const result = await publishTemplate(supabase, session.user.id, program.id, {
+                      title: program.name,
+                      description: `${program.program_days.length} day program`,
+                    });
+                    Alert.alert(
+                      'Published!',
+                      `Template available at: cadence.app/t/${result.slug}`
+                    );
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Publish failed';
+                    Alert.alert('Error', msg);
+                  }
+                },
+              },
+            ]
+          );
+    },
+    [session]
+  );
+
   const handleActivateProgram = useCallback(
     (program: ProgramListItem) => {
       if (program.status === 'active') return;
@@ -215,6 +273,15 @@ export default function ProgramLibraryScreen() {
                 accessibilityLabel={`View details of ${program.name}`}
               >
                 <ThemedText style={{ fontSize: 13, fontWeight: '600', color: theme.text }}>View</ThemedText>
+              </Pressable>
+
+              <Pressable
+                style={[styles.viewButton, { backgroundColor: theme.backgroundElement }]}
+                onPress={() => handlePublishTemplate(program)}
+                accessibilityRole="button"
+                accessibilityLabel={`Publish ${program.name} as a shareable template`}
+              >
+                <ThemedText style={{ fontSize: 13, fontWeight: '600', color: theme.text }}>Publish</ThemedText>
               </Pressable>
             </View>
           </View>

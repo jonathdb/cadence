@@ -441,19 +441,32 @@ describe('Spotify Auth Service', () => {
             }),
           }),
         }),
+        update: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
       });
 
-      // Mock /me endpoint — might fail with expired token, returns null accountName
+      // Mock token refresh endpoint — succeeds with a new access token
       mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
+        ok: true,
+        json: () => Promise.resolve({
+          access_token: 'refreshed-token',
+          expires_in: 3600,
+          refresh_token: 'valid-refresh',
+        }),
+      });
+
+      // Mock /me endpoint after refresh — succeeds to confirm connected
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ display_name: null, id: 'spotify-user' }),
       });
 
       const status = await getSpotifyConnectionStatus(userId);
 
-      // Still connected because refresh token can renew server-side
+      // Still connected because refresh token successfully renewed
       expect(status.connected).toBe(true);
-      expect(status.accountName).toBeNull();
+      expect(status.accountName).toBe('spotify-user');
     });
 
     it('should return connected=false when expired and no refresh token', async () => {

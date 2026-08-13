@@ -172,6 +172,15 @@ export default function ProgramScreen() {
           <ThemedText style={[styles.libraryButtonText, { color: theme.accent }]}>Program Library</ThemedText>
         </Pressable>
 
+        <Pressable
+          style={[styles.libraryButton, { backgroundColor: theme.backgroundElement }]}
+          onPress={() => router.push('/(tabs)/program/templates')}
+          accessibilityRole="button"
+          accessibilityLabel="Browse community templates"
+        >
+          <ThemedText style={[styles.libraryButtonText, { color: theme.accent }]}>Browse Templates</ThemedText>
+        </Pressable>
+
         {sortedDays.map((day) => {
           const sortedItems = [...(day.program_day_items || [])].sort(
             (a, b) => a.order_index - b.order_index

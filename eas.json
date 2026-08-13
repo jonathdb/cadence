@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 15.0.0"
+  },
+  "build": {
+    "development": {
+      "distribution": "internal",
+      "developmentClient": true,
+      "channel": "development",
+      "ios": {},
+      "android": {}
+    },
+    "preview": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "channel": "preview",
+      "ios": {},
+      "android": {}
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "autoIncrement": true,
+      "ios": {
+        "autoIncrement": true
+      },
+      "android": {
+        "autoIncrement": true
+      }
+    }
+  }
+}

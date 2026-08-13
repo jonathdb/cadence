@@ -9,8 +9,12 @@ import { useEffect } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { initSentry } from '@/lib/sentry';
 import { AuthProvider, useAuth } from '@/providers/AuthProvider';
 import { StoreIntegrationProvider } from '@/providers/StoreIntegrationProvider';
+
+// Initialize Sentry at module level — before any error boundaries mount
+initSentry();
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 

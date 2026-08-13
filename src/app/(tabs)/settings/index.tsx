@@ -60,6 +60,14 @@ export default function SettingsIndexScreen() {
   const theme = useTheme();
   const { settings, updateSetting } = useUserSettings();
   const capabilities = usePlatformCapabilities();
+  const fetchTierInfo = useAiTierStore((s) => s.fetchTierInfo);
+
+  // Fetch AI tier info when screen mounts
+  useEffect(() => {
+    if (session?.user?.id) {
+      fetchTierInfo(session.user.id);
+    }
+  }, [session?.user?.id, fetchTierInfo]);
 
   // Filter settings links based on platform capabilities (Req 23.2, 23.3)
   const visibleLinks = SETTINGS_LINKS.filter((link) => {
@@ -82,6 +90,14 @@ export default function SettingsIndexScreen() {
           <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText>{session?.user.email ?? 'Not signed in'}</ThemedText>
           </View>
+        </View>
+
+        {/* AI Plan Section */}
+        <View style={styles.section}>
+          <ThemedText type="labelMedium" themeColor="textSecondary">
+            AI PLAN
+          </ThemedText>
+          <AIPlanCard />
         </View>
 
         {/* Session Preferences (Req 15.2, 15.3) */}

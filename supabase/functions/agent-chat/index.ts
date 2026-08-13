@@ -43,6 +43,16 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const TIMEOUT_MS = 30_000;
 
+// Validate required environment variables at startup
+const CADENCE_OPENAI_KEY = Deno.env.get('CADENCE_OPENAI_KEY');
+const CADENCE_ANTHROPIC_KEY = Deno.env.get('CADENCE_ANTHROPIC_KEY');
+if (!CADENCE_OPENAI_KEY) {
+  console.error('[agent-chat] WARNING: CADENCE_OPENAI_KEY environment variable not set. Free/Pro OpenAI tier will fail.');
+}
+if (!CADENCE_ANTHROPIC_KEY) {
+  console.error('[agent-chat] WARNING: CADENCE_ANTHROPIC_KEY environment variable not set. Free/Pro Anthropic tier will fail.');
+}
+
 function errorResponse(
   status: number,
   code: string,
@@ -120,6 +130,7 @@ Your capabilities (via tool calls):
 - List all user programs with summary info
 - Search, create, and modify Spotify playlists
 - Suggest pace-matched playlists for running, cycling, and walking sessions (works with or without route history)
+- Suggest progression adjustments (weight increases, deloads, volume changes) based on session history and recovery data
 
 Guidelines:
 - Be concise and actionable in your responses
@@ -144,6 +155,8 @@ Guidelines:
 - When extracting music preferences from conversation, apply at most 5 total seeds (combined genres + artists + tracks). If the user mentions more than 5 preferences, select the 5 most recently mentioned and inform the user that Spotify allows a maximum of 5 seed values at a time.
 - If the user contradicts a previous music preference (e.g., "actually, not hip-hop, make it rock"), use the most recent preference and discard the contradicted one.
 - After creating a playlist via spotify_create_playlist, always include the external_url from the tool result in your response so the user can open it directly in Spotify.
+- When the user asks about progression, next steps, "what should I change?", or how to adjust their training, first call get_session_details for recent sessions, get_recovery_summary, and get_active_program to gather context. Then call suggest_progression with the assembled data. Present the suggestions conversationally with reasoning, and always request explicit user confirmation before calling program_modify to apply any changes.
+- When presenting suggest_progression results, format each suggestion clearly: exercise name, what's recommended (e.g., "increase bench press from 80kg to 82.5kg"), the reasoning, and confidence level. Group suggestions by type if multiple exercises are affected.
 - Never expose or reference API keys, internal systems, or technical implementation details to the user`;
 }
 
@@ -153,7 +166,8 @@ Guidelines:
 async function callOpenAI(
   apiKey: string,
   messages: ChatMessage[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  model: string = 'gpt-4o'
 ): Promise<Response> {
   const systemMessage: ChatMessage = { role: 'system', content: getSystemPrompt() };
   const allMessages = [systemMessage, ...messages];
@@ -165,7 +179,7 @@ async function callOpenAI(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model,
       messages: allMessages,
       tools: toolDefinitions,
       stream: true,
@@ -182,7 +196,8 @@ async function callOpenAI(
 async function callAnthropic(
   apiKey: string,
   messages: ChatMessage[],
-  signal: AbortSignal
+  signal: AbortSignal,
+  model: string = 'claude-haiku-4-5-20251001'
 ): Promise<Response> {
   // Anthropic uses a separate system param and different message format.
   // Key differences from OpenAI:
@@ -252,7 +267,7 @@ async function callAnthropic(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model,
       max_tokens: 4096,
       system: getSystemPrompt(),
       messages: anthropicMessages,
@@ -272,11 +287,13 @@ async function callAnthropic(
 /**
  * Stream the upstream AI response back to the client as SSE.
  * Also accumulates the full response for storage.
+ * Accepts optional extra headers (e.g., X-Rate-Limit-Remaining).
  */
 function createSSEStream(
   upstreamResponse: Response,
   provider: 'openai' | 'anthropic',
-  userId: string
+  userId: string,
+  extraHeaders?: Record<string, string>
 ): Response {
   const encoder = new TextEncoder();
 
@@ -404,6 +421,7 @@ function createSSEStream(
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      ...(extraHeaders ?? {}),
     },
   });
 }
@@ -487,11 +505,44 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return errorResponse(400, 'invalid_provider', 'Provider must be "openai" or "anthropic"');
   }
 
-  // Retrieve user's API key from Vault
-  const apiKey = await getUserApiKey(userId, provider);
-  if (!apiKey) {
-    return errorResponse(400, 'api_key_required', `No ${provider} API key found. Please add your API key in settings.`);
+  // Resolve provider preference from user_settings if not explicitly provided
+  let effectiveProvider = provider;
+  if (!body.provider) {
+    const supabaseForSettings = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: settings } = await supabaseForSettings
+      .from('user_settings')
+      .select('preferred_ai_provider')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (settings?.preferred_ai_provider) {
+      effectiveProvider = settings.preferred_ai_provider as 'openai' | 'anthropic';
+    }
   }
+
+  // ─── TIER RESOLUTION ───────────────────────────────────────────────────────
+  const supabaseService = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  let tierResolution;
+  try {
+    tierResolution = await resolveTier(supabaseService, userId, effectiveProvider);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Tier resolution failed';
+    console.error('Tier resolution error:', msg);
+    return errorResponse(500, 'internal_error', 'Failed to determine AI access tier. Please try again.');
+  }
+
+  // ─── RATE LIMIT CHECK ──────────────────────────────────────────────────────
+  let rateLimitResult = null;
+  if (tierResolution.tier !== 'byok') {
+    rateLimitResult = await checkAndIncrementUsage(supabaseService, userId, tierResolution.tier);
+    if (!rateLimitResult.allowed) {
+      return errorResponse(429, 'rate_limit_exceeded',
+        `Daily message limit reached (${rateLimitResult.limit} messages/day). Upgrade to Pro or add your own API key for unlimited access.`
+      );
+    }
+  }
+
+  // ─── MODEL SELECTION ───────────────────────────────────────────────────────
+  const { model } = selectModel(tierResolution.tier, effectiveProvider);
 
   // Build conversation messages
   const messages: ChatMessage[] = [
@@ -521,10 +572,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     let upstreamResponse: Response;
 
-    if (provider === 'openai') {
-      upstreamResponse = await callOpenAI(apiKey, messages, controller.signal);
+    if (effectiveProvider === 'openai') {
+      upstreamResponse = await callOpenAI(tierResolution.apiKey, messages, controller.signal, model);
     } else {
-      upstreamResponse = await callAnthropic(apiKey, messages, controller.signal);
+      upstreamResponse = await callAnthropic(tierResolution.apiKey, messages, controller.signal, model);
     }
 
     clearTimeout(timeout);
@@ -538,14 +589,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return errorResponse(429, 'rate_limit', 'AI provider rate limit exceeded. Please try again shortly.');
       }
       if (status === 401) {
-        return errorResponse(400, 'api_key_invalid', 'Your API key is invalid or expired. Please update it in settings.');
+        if (tierResolution.apiKeySource === 'user') {
+          return errorResponse(400, 'api_key_invalid', 'Your API key is invalid or expired. Please update it in settings.');
+        }
+        // Backend key issue — internal error
+        console.error(`Backend ${effectiveProvider} key returned 401`);
+        return errorResponse(502, 'provider_error', 'AI provider returned an error. Please try again.');
       }
-      console.error(`Upstream ${provider} error (${status}):`, errorBody);
+      console.error(`Upstream ${effectiveProvider} error (${status}):`, errorBody);
       return errorResponse(502, 'provider_error', 'AI provider returned an error. Please try again.');
     }
 
+    // Build extra headers for rate limit info
+    const extraHeaders: Record<string, string> = {};
+    if (rateLimitResult) {
+      extraHeaders['X-Rate-Limit-Remaining'] = String(rateLimitResult.remaining);
+      extraHeaders['X-Rate-Limit-Limit'] = String(rateLimitResult.limit);
+      extraHeaders['X-Rate-Limit-Tier'] = tierResolution.tier;
+    }
+
     // Stream the response back as SSE
-    return createSSEStream(upstreamResponse, provider, userId);
+    return createSSEStream(upstreamResponse, effectiveProvider, userId, extraHeaders);
   } catch (err) {
     clearTimeout(timeout);
 

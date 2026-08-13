@@ -1014,6 +1014,7 @@ export default function ChatScreen() {
         {/* Header with clear chat */}
         {messages.length > 0 && (
           <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}>
+            <ChatUsageIndicator />
             <Pressable
               style={[styles.clearButton, { backgroundColor: theme.backgroundElement }]}
               onPress={handleClearChat}
@@ -1057,6 +1058,7 @@ export default function ChatScreen() {
         />
 
         {/* Input area */}
+        <RateLimitReachedMessage />
         <View style={[styles.inputContainer, { borderTopColor: theme.border }]}>
           <TextInput
             style={[styles.textInput, {
@@ -1070,7 +1072,7 @@ export default function ChatScreen() {
             onChangeText={setInputText}
             multiline
             maxLength={2000}
-            editable={!isStreaming}
+            editable={!isStreaming && !useAiTierStore.getState().isRateLimited}
             onSubmitEditing={sendMessage}
             blurOnSubmit={false}
           />

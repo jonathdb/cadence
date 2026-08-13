@@ -9,6 +9,7 @@
  *
  * Requirements: 19.1, 19.2, 19.3, 19.4
  */
+import * as Sentry from '@sentry/react-native';
 import React from 'react';
 
 import { AppCrashScreen } from '@/components/AppCrashScreen';
@@ -39,6 +40,17 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     logError(error, errorInfo);
+
+    // Report to Sentry in production/preview only
+    if (!__DEV__) {
+      Sentry.captureException(error, {
+        contexts: {
+          react: {
+            componentStack: errorInfo.componentStack ?? '',
+          },
+        },
+      });
+    }
   }
 
   handleReset = (): void => {

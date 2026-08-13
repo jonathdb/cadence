@@ -1852,6 +1852,25 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
       block_completions: resolvedBlockCompletions,
     };
   },
+
+  /**
+   * suggest_progression — Evaluates exercise history against progression rules
+   * and returns structured suggestions. Pure function delegation.
+   * Subject to the program_edits Permission_Category.
+   * Validates: Requirements 1.1, 11.2
+   */
+  suggest_progression: async (_supabase, _userId, args) => {
+    const { evaluateProgression } = await import('./progression-engine.ts');
+
+    const input = {
+      exercise_history: args.exercise_history as any[],
+      recovery_summary: args.recovery_summary as any,
+      program_targets: args.program_targets as any[],
+      scope: (args.scope as string) ?? 'full_program',
+    };
+
+    return { suggestions: evaluateProgression(input as any) };
+  },
 };
 
 /**

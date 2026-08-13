@@ -17,8 +17,10 @@ import { type RealtimeChannel } from '@supabase/supabase-js';
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
+import { logError } from '@/lib/error-logger';
 import { useAuth } from '@/providers/AuthProvider';
 import { getSyncEngine, initSyncEngine, resetSyncEngine } from '@/services/sync-engine';
+import { initWAL } from '@/services/wal';
 import {
     useCadenceStore,
     type Exercise,
@@ -199,6 +201,17 @@ export function StoreIntegrationProvider({ children }: { children: React.ReactNo
     void loadData();
   }, [userId, session]);
 
+  // ── RevenueCat + AI Tier Initialization ────────────────────────────────────
+  useEffect(() => {
+    if (!userId || !session) return;
+
+    // Initialize RevenueCat SDK (native only, no-op on web)
+    void initPurchases(userId);
+
+    // Fetch AI tier info for the store
+    void useAiTierStore.getState().fetchTierInfo(userId);
+  }, [userId, session]);
+
   // ── Sync Engine Initialization & NetInfo Connectivity Listener ─────────────
   useEffect(() => {
     // Sync Engine requires expo-sqlite (WAL) — skip on web
@@ -215,7 +228,16 @@ export function StoreIntegrationProvider({ children }: { children: React.ReactNo
     }
 
     // Initialize WAL first (sync engine depends on it), then sync engine
-    initWAL();
+    try {
+      initWAL();
+    } catch (err) {
+      logError(
+        err instanceof Error ? err : new Error(String(err)),
+        { componentStack: '' } as React.ErrorInfo,
+        'StoreIntegrationProvider:initWAL'
+      );
+      return; // Skip sync engine init — degrade gracefully
+    }
     initSyncEngine();
 
     // Subscribe to NetInfo changes to trigger flush on reconnect

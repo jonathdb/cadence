@@ -2,10 +2,12 @@
  * Error Logger - Environment-aware error logging for error boundaries.
  *
  * In development (__DEV__ = true): logs to console with full stack trace.
- * In production: outputs structured JSON logs suitable for log aggregation services.
+ * In production: outputs structured JSON logs suitable for log aggregation services
+ * and forwards errors to Sentry with metadata.
  *
- * Requirements: 19.4
+ * Requirements: 19.4, 3.4, 3.5
  */
+import { captureException } from '@/lib/sentry';
 import React from 'react';
 
 export interface StructuredErrorLog {
@@ -48,5 +50,12 @@ export function logError(
 
     // Output as structured JSON - can be picked up by log aggregation tools
     console.error(JSON.stringify(structuredLog));
+
+    // Forward to Sentry with metadata for production error monitoring
+    captureException(error, {
+      componentStack: errorInfo.componentStack ?? undefined,
+      route: context ?? 'unknown',
+      context: context ?? 'root',
+    });
   }
 }

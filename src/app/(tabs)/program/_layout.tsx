@@ -27,6 +27,8 @@ export default function ProgramLayout() {
       <Stack.Screen name="library" options={{ title: 'Exercise Library' }} />
       <Stack.Screen name="[dayId]" options={{ title: 'Day Detail' }} />
       <Stack.Screen name="edit/[programId]" options={{ title: 'Program Editor' }} />
+      <Stack.Screen name="templates" options={{ title: 'Browse Templates' }} />
+      <Stack.Screen name="template-preview" options={{ title: 'Template Preview' }} />
     </Stack>
   );
 }

@@ -417,6 +417,92 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'suggest_progression',
+      description:
+        'Analyze exercise history, recovery data, and program targets to suggest weight/volume adjustments for the next session. ' +
+        'Call get_session_details, get_recovery_summary, and get_active_program first to gather the required input data. ' +
+        'Returns structured suggestions with reasoning that should be presented to the user for approval before applying changes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          exercise_history: {
+            type: 'array',
+            description: 'Array of exercise histories with recent session data (most-recent-first)',
+            items: {
+              type: 'object',
+              properties: {
+                exercise_name: { type: 'string' },
+                muscle_group: {
+                  type: 'string',
+                  enum: ['chest', 'back', 'shoulders', 'biceps', 'triceps',
+                         'quads', 'hamstrings', 'glutes', 'calves'],
+                },
+                sessions: {
+                  type: 'array',
+                  description: 'Recent sessions for this exercise, ordered most-recent-first',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      session_date: { type: 'string', description: 'ISO date string' },
+                      sets: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            weight: { type: 'number' },
+                            reps: { type: 'integer' },
+                            rpe: { type: 'number', nullable: true },
+                          },
+                          required: ['weight', 'reps'],
+                        },
+                      },
+                    },
+                    required: ['session_date', 'sets'],
+                  },
+                },
+              },
+              required: ['exercise_name', 'muscle_group', 'sessions'],
+            },
+          },
+          recovery_summary: {
+            type: 'object',
+            description: 'Recent recovery data (from get_recovery_summary)',
+            properties: {
+              avg_sleep_hours: { type: 'number', description: 'Average sleep hours over the period' },
+              hrv_ms: { type: 'number', description: 'Most recent HRV in milliseconds' },
+              hrv_baseline_ms: { type: 'number', description: 'User baseline HRV in milliseconds (7-day average)' },
+              resting_hr_bpm: { type: 'number', description: 'Resting heart rate in BPM' },
+            },
+            required: ['avg_sleep_hours', 'hrv_ms', 'hrv_baseline_ms', 'resting_hr_bpm'],
+          },
+          program_targets: {
+            type: 'array',
+            description: 'Current program targets for each exercise (from get_active_program)',
+            items: {
+              type: 'object',
+              properties: {
+                exercise_name: { type: 'string' },
+                target_sets: { type: 'integer' },
+                target_rep_range: { type: 'string', description: 'e.g. "8-12"' },
+                target_weight: { type: 'number' },
+                target_rpe: { type: 'number', nullable: true },
+              },
+              required: ['exercise_name', 'target_sets', 'target_rep_range', 'target_weight'],
+            },
+          },
+          scope: {
+            type: 'string',
+            enum: ['full_program', 'single_exercise'],
+            description: 'Whether to evaluate all exercises or just the first one (default: full_program)',
+          },
+        },
+        required: ['exercise_history', 'recovery_summary', 'program_targets'],
+      },
+    },
+  },
 ];
 
 /**

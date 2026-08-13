@@ -29,11 +29,29 @@ const mockApiRequest = vi.mocked(spotifyApiRequest);
 
 describe('Tool Handlers - Spotify (Task 4.5)', () => {
   const userId = 'user-spotify-123';
-  const mockSupabase = {} as any; // Supabase is passed to getSpotifyAccessToken
+
+  // Mock Supabase client with .from().select().eq().single() chain
+  // for the user_spotify_tokens table query used for debug logging
+  const mockSingle = vi.fn().mockResolvedValue({
+    data: { scopes: ['playlist-modify-public', 'playlist-modify-private'], expires_at: '2099-01-01T00:00:00Z' },
+    error: null,
+  });
+  const mockEq = vi.fn().mockReturnValue({ single: mockSingle });
+  const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
+  const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
+  const mockSupabase = { from: mockFrom } as any;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetToken.mockResolvedValue('mock-access-token');
+    // Reset Supabase mock chain for each test
+    mockSingle.mockResolvedValue({
+      data: { scopes: ['playlist-modify-public', 'playlist-modify-private'], expires_at: '2099-01-01T00:00:00Z' },
+      error: null,
+    });
+    mockEq.mockReturnValue({ single: mockSingle });
+    mockSelect.mockReturnValue({ eq: mockEq });
+    mockFrom.mockReturnValue({ select: mockSelect });
   });
 
   describe('spotify_search_playlist', () => {
@@ -139,16 +157,16 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
   });
 
   describe('spotify_create_playlist', () => {
-    it('creates a playlist and returns details', async () => {
+    it('creates a playlist via primary /me/playlists endpoint and returns details', async () => {
       const handler = getToolHandler('spotify_create_playlist')!;
 
       mockApiRequest
-        .mockResolvedValueOnce({ id: 'spotify-user-42' }) // GET /me
+        .mockResolvedValueOnce({ id: 'spotify-user-42', product: 'premium' }) // GET /me
         .mockResolvedValueOnce({
           id: 'new-pl-1',
           name: 'Morning Run',
           external_urls: { spotify: 'https://open.spotify.com/playlist/new-pl-1' },
-        }); // POST /users/.../playlists
+        }); // POST /me/playlists (primary endpoint succeeds)
 
       const result = (await handler(mockSupabase, userId, {
         name: 'Morning Run',
@@ -160,11 +178,19 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
         'GET',
         '/me'
       );
+      // Primary endpoint should be called
       expect(mockApiRequest).toHaveBeenCalledWith(
         'mock-access-token',
         'POST',
-        '/users/spotify-user-42/playlists',
+        '/me/playlists',
         { name: 'Morning Run', description: 'Energizing morning playlist', public: false }
+      );
+      // Fallback endpoint should NOT be called when primary succeeds
+      expect(mockApiRequest).not.toHaveBeenCalledWith(
+        'mock-access-token',
+        'POST',
+        '/users/spotify-user-42/playlists',
+        expect.anything()
       );
       expect(result).toEqual({
         playlist_id: 'new-pl-1',
@@ -175,17 +201,56 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
       });
     });
 
+    it('falls back to /users/{id}/playlists when /me/playlists throws', async () => {
+      const handler = getToolHandler('spotify_create_playlist')!;
+
+      mockApiRequest
+        .mockResolvedValueOnce({ id: 'spotify-user-42', product: 'premium' }) // GET /me
+        .mockRejectedValueOnce(new Error('400 Bad Request')) // POST /me/playlists fails
+        .mockResolvedValueOnce({
+          id: 'new-pl-fallback',
+          name: 'Fallback Playlist',
+          external_urls: { spotify: 'https://open.spotify.com/playlist/new-pl-fallback' },
+        }); // POST /users/{id}/playlists (fallback succeeds)
+
+      const result = (await handler(mockSupabase, userId, {
+        name: 'Fallback Playlist',
+        description: 'Created via fallback',
+      })) as any;
+
+      // Both endpoints should have been called
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        'mock-access-token',
+        'POST',
+        '/me/playlists',
+        { name: 'Fallback Playlist', description: 'Created via fallback', public: false }
+      );
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        'mock-access-token',
+        'POST',
+        '/users/spotify-user-42/playlists',
+        { name: 'Fallback Playlist', description: 'Created via fallback', public: false }
+      );
+      expect(result).toEqual({
+        playlist_id: 'new-pl-fallback',
+        name: 'Fallback Playlist',
+        external_url: 'https://open.spotify.com/playlist/new-pl-fallback',
+        tracks_added: 0,
+        image_url: null,
+      });
+    });
+
     it('creates a playlist and adds tracks when track_uris provided', async () => {
       const handler = getToolHandler('spotify_create_playlist')!;
       const trackUris = ['spotify:track:abc', 'spotify:track:def'];
 
       mockApiRequest
-        .mockResolvedValueOnce({ id: 'spotify-user-42' }) // GET /me
+        .mockResolvedValueOnce({ id: 'spotify-user-42', product: 'premium' }) // GET /me
         .mockResolvedValueOnce({
           id: 'new-pl-2',
           name: 'Lift Heavy',
           external_urls: { spotify: 'https://open.spotify.com/playlist/new-pl-2' },
-        }) // POST create
+        }) // POST /me/playlists (primary succeeds)
         .mockResolvedValueOnce({ snapshot_id: 'snap-1' }); // POST add tracks
 
       const result = (await handler(mockSupabase, userId, {
@@ -196,7 +261,7 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
       expect(mockApiRequest).toHaveBeenCalledWith(
         'mock-access-token',
         'POST',
-        '/playlists/new-pl-2/tracks',
+        '/playlists/new-pl-2/items',
         { uris: trackUris }
       );
       expect(result.tracks_added).toBe(2);
@@ -214,21 +279,40 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
       const handler = getToolHandler('spotify_create_playlist')!;
 
       mockApiRequest
-        .mockResolvedValueOnce({ id: 'spotify-user-42' })
+        .mockResolvedValueOnce({ id: 'spotify-user-42', product: 'premium' }) // GET /me
         .mockResolvedValueOnce({
           id: 'pl-private',
           name: 'Secret Jams',
           external_urls: { spotify: 'https://open.spotify.com/playlist/pl-private' },
-        });
+        }); // POST /me/playlists
 
       await handler(mockSupabase, userId, { name: 'Secret Jams' });
 
       expect(mockApiRequest).toHaveBeenCalledWith(
         'mock-access-token',
         'POST',
-        '/users/spotify-user-42/playlists',
+        '/me/playlists',
         expect.objectContaining({ public: false })
       );
+    });
+
+    it('queries user_spotify_tokens for debug logging', async () => {
+      const handler = getToolHandler('spotify_create_playlist')!;
+
+      mockApiRequest
+        .mockResolvedValueOnce({ id: 'spotify-user-42', product: 'premium' }) // GET /me
+        .mockResolvedValueOnce({
+          id: 'new-pl-token-check',
+          name: 'Token Check',
+          external_urls: { spotify: 'https://open.spotify.com/playlist/new-pl-token-check' },
+        }); // POST /me/playlists
+
+      await handler(mockSupabase, userId, { name: 'Token Check' });
+
+      // Verify Supabase user_spotify_tokens query was called
+      expect(mockFrom).toHaveBeenCalledWith('user_spotify_tokens');
+      expect(mockSelect).toHaveBeenCalledWith('scopes, expires_at');
+      expect(mockEq).toHaveBeenCalledWith('user_id', userId);
     });
   });
 
@@ -247,7 +331,7 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
       expect(mockApiRequest).toHaveBeenCalledWith(
         'mock-access-token',
         'POST',
-        '/playlists/pl-existing/tracks',
+        '/playlists/pl-existing/items',
         { uris: addTracks }
       );
       expect(result).toEqual({
@@ -271,8 +355,8 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
       expect(mockApiRequest).toHaveBeenCalledWith(
         'mock-access-token',
         'DELETE',
-        '/playlists/pl-existing/tracks',
-        { tracks: [{ uri: 'spotify:track:333' }] }
+        '/playlists/pl-existing/items',
+        { uris: removeTracks }
       );
       expect(result).toEqual({
         playlist_id: 'pl-existing',
@@ -347,6 +431,14 @@ describe('Tool Handlers - Spotify (Task 4.5)', () => {
       })) as any;
 
       expect(mockGetToken).toHaveBeenCalledWith(mockSupabase, userId);
+      // Verify the search URL matches buildPacePlaylistQuery output:
+      // For running with bpmRange {min:170, max:180, label:'moderate running'} and duration < 60:
+      // query = "moderate running 170-180 bpm running"
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        'mock-access-token',
+        'GET',
+        `/search?type=playlist&q=${encodeURIComponent('moderate running 170-180 bpm running')}&limit=5`
+      );
       expect(result.activity_type).toBe('running');
       expect(result.target_bpm_range).toEqual({ min: 170, max: 180, label: 'moderate running' });
       expect(result.effective_pace_seconds_per_km).toBe(330);
