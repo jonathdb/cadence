@@ -35,6 +35,7 @@ import {
 } from '@/services/auto-fill';
 import * as haptics from '@/services/haptics';
 import { detectPR, ExerciseHistory, PRResult } from '@/services/pr-detection';
+import { triggerSessionInsight } from '@/services/session-insight';
 import {
     startTimer,
     TimerController,
@@ -809,6 +810,9 @@ export default function SessionLoggingScreen() {
         } as never)
         .eq('id', sessionId);
 
+      // Fire-and-forget proactive coach insight (approval-gated; never blocks navigation).
+      void triggerSessionInsight(sessionId);
+
       // Navigate to Summary Screen with session ID (Req 2.1)
       router.replace(`/(tabs)/session/summary/${sessionId}`);
     } catch (err) {
@@ -901,7 +905,7 @@ export default function SessionLoggingScreen() {
               {/* Exercise header */}
               <View style={styles.exerciseHeader}>
                 <View style={[styles.orderBadge, { backgroundColor: theme.accent }]}>
-                  <ThemedText style={styles.orderText}>
+                  <ThemedText style={[styles.orderText, { color: theme.accentText }]}>
                     {index + 1}
                   </ThemedText>
                 </View>
@@ -1011,7 +1015,7 @@ export default function SessionLoggingScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Log set for ${item.exercises.name}`}
                   >
-                    <ThemedText style={styles.addSetButtonText}>
+                    <ThemedText style={[styles.addSetButtonText, { color: theme.accentText }]}>
                       + Log Set {sets.length + 1}
                     </ThemedText>
                   </Pressable>

@@ -130,9 +130,9 @@ export default function Index() {
             disabled={isSubmitting}
           >
             {isSubmitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={theme.accentText} />
             ) : (
-              <ThemedText style={styles.buttonText}>
+              <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>
                 {isSignUp ? 'Sign Up' : 'Sign In'}
               </ThemedText>
             )}

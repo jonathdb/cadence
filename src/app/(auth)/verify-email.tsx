@@ -111,7 +111,7 @@ export default function VerifyEmailScreen() {
             accessibilityRole="button"
             accessibilityLabel="Back to sign in"
           >
-            <ThemedText style={styles.buttonText}>Back to Sign In</ThemedText>
+            <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>Back to Sign In</ThemedText>
           </Pressable>
         </View>
       </SafeAreaView>

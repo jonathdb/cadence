@@ -21,13 +21,19 @@ import {
     View
 } from 'react-native';
 
+
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { ChatUsageIndicator, RateLimitReachedMessage } from '@/components/ChatUsageIndicator';
 import { PlaylistCardList } from '@/components/PlaylistCardList';
 import { ProgramProposal } from '@/components/ProgramProposal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Icon } from '@/components/ui/Icon';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAiTierStore } from '@/store/ai-tier';
 import { extractPlaylistCardData } from '@/utils/extract-playlist-card-data';
 import { supabase } from '@/utils/supabase';
 
@@ -82,6 +88,7 @@ export default function ChatScreen() {
   const { session } = useAuth();
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -957,8 +964,9 @@ export default function ChatScreen() {
         <View
           style={[
             styles.messageBubble,
+            { borderWidth: 1, borderColor: theme.border },
             isUser && { backgroundColor: theme.chatBubbleUser, alignSelf: 'flex-end' as const },
-            isSystem && { backgroundColor: theme.chatBubbleSystem, alignSelf: 'center' as const, maxWidth: '90%' },
+            isSystem && { backgroundColor: theme.chatBubbleSystem, alignSelf: 'center' as const, maxWidth: '90%', borderColor: 'rgba(16,185,129,0.4)' },
             !isUser && !isSystem && { backgroundColor: theme.chatBubbleAssistant, alignSelf: 'flex-start' as const },
           ]}
         >
@@ -1016,13 +1024,14 @@ export default function ChatScreen() {
           <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}>
             <ChatUsageIndicator />
             <Pressable
-              style={[styles.clearButton, { backgroundColor: theme.backgroundElement }]}
+              style={[styles.clearButton, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
               onPress={handleClearChat}
               disabled={isStreaming}
               accessibilityRole="button"
               accessibilityLabel="Start new chat"
             >
-              <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>New Chat</ThemedText>
+              <Icon name="refresh" size={14} color={theme.textSecondary} />
+              <ThemedText type="labelMedium" themeColor="textSecondary">New Chat</ThemedText>
             </Pressable>
           </View>
         )}
@@ -1057,36 +1066,55 @@ export default function ChatScreen() {
           }
         />
 
-        {/* Input area */}
+        {/* Input dock */}
         <RateLimitReachedMessage />
-        <View style={[styles.inputContainer, { borderTopColor: theme.border }]}>
-          <TextInput
-            style={[styles.textInput, {
-              backgroundColor: theme.backgroundElement,
-              borderColor: theme.border,
-              color: theme.text,
-            }]}
-            placeholder="Message the agent..."
-            placeholderTextColor={theme.textTertiary}
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={2000}
-            editable={!isStreaming && !useAiTierStore.getState().isRateLimited}
-            onSubmitEditing={sendMessage}
-            blurOnSubmit={false}
-          />
-          <Pressable
-            style={[styles.sendButton, { backgroundColor: theme.accent }, (isStreaming || !inputText.trim()) && styles.sendButtonDisabled]}
-            onPress={sendMessage}
-            disabled={isStreaming || !inputText.trim()}
+        <View
+          style={[
+            styles.inputContainer,
+            {
+              borderTopColor: theme.border,
+              backgroundColor: theme.background,
+              paddingBottom: Spacing.two + insets.bottom,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.inputDock,
+              { backgroundColor: theme.backgroundElevated, borderColor: theme.borderStrong },
+            ]}
           >
-            {isStreaming ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <ThemedText style={styles.sendButtonText}>Send</ThemedText>
-            )}
-          </Pressable>
+            <TextInput
+              style={[styles.textInput, { color: theme.text }]}
+              placeholder="Ask Coach Cadence to adjust..."
+              placeholderTextColor={theme.textTertiary}
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={2000}
+              editable={!isStreaming && !useAiTierStore.getState().isRateLimited}
+              onSubmitEditing={sendMessage}
+              blurOnSubmit={false}
+            />
+            <Pressable
+              style={[
+                styles.sendButton,
+                { backgroundColor: theme.accent },
+                (isStreaming || !inputText.trim()) && styles.sendButtonDisabled,
+                !(isStreaming || !inputText.trim()) && theme.shadows.glowSoft,
+              ]}
+              onPress={sendMessage}
+              disabled={isStreaming || !inputText.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              {isStreaming ? (
+                <ActivityIndicator color={theme.accentText} size="small" />
+              ) : (
+                <Icon name="arrow-up" size={22} color={theme.accentText} />
+              )}
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </ThemedView>
@@ -1114,9 +1142,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   clearButton: {
-    paddingHorizontal: Spacing.two + 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.two + 2,
     paddingVertical: Spacing.one + 2,
-    borderRadius: Radii.medium,
+    borderRadius: Radii.full,
+    borderWidth: 1,
   },
   messageList: {
     padding: Spacing.three,
@@ -1138,37 +1170,35 @@ const styles = StyleSheet.create({
     marginTop: Spacing.two,
   },
   inputContainer: {
+    paddingHorizontal: Spacing.two,
+    paddingTop: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  inputDock: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: Spacing.two,
-    borderTopWidth: 1,
+    borderWidth: 1,
+    borderRadius: Radii.xl,
+    padding: Spacing.one + 2,
     gap: Spacing.two,
   },
   textInput: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: Radii.xl,
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.two,
     fontSize: 15,
     maxHeight: 100,
-    minHeight: 48,
+    minHeight: 40,
   },
   sendButton: {
-    borderRadius: Radii.xl,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two + 2,
+    width: 44,
+    height: 44,
+    borderRadius: Radii.medium,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 48,
   },
   sendButtonDisabled: {
     opacity: 0.5,
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
   },
   errorBanner: {
     padding: Spacing.two,

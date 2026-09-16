@@ -19,8 +19,10 @@ import { Platform } from 'react-native';
 
 import { logError } from '@/lib/error-logger';
 import { useAuth } from '@/providers/AuthProvider';
+import { initPurchases } from '@/services/purchases';
 import { getSyncEngine, initSyncEngine, resetSyncEngine } from '@/services/sync-engine';
 import { initWAL } from '@/services/wal';
+import { useAiTierStore } from '@/store/ai-tier';
 import {
     useCadenceStore,
     type Exercise,
@@ -118,7 +120,7 @@ async function fetchRecentSessions(userId: string): Promise<Session[]> {
     id: s.id,
     programDayId: s.program_day_id,
     status: s.status,
-    startedAt: s.started_at,
+    startedAt: s.started_at ?? '',
     completedAt: s.completed_at,
     sets: (sets ?? [])
       .filter((set) => set.session_id === s.id)
@@ -127,12 +129,12 @@ async function fetchRecentSessions(userId: string): Promise<Session[]> {
         exerciseId: set.exercise_id,
         sessionId: set.session_id,
         setNumber: set.set_number,
-        reps: set.reps,
-        weight: set.weight,
+        reps: set.reps ?? 0,
+        weight: set.weight ?? 0,
         rpe: set.rpe,
         notes: set.notes,
         isPr: set.is_pr,
-        loggedAt: set.logged_at,
+        loggedAt: set.logged_at ?? '',
       })),
   }));
 }

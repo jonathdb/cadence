@@ -368,3 +368,312 @@ export function evaluateProgression(input: ProgressionInput): Suggestion[] {
     };
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROGRESSION ENGINE V2 — unified, profile-aware (Task 7)
+//
+// V2 layers goal-weighting, experience scaling, injury/equipment guardrails, a
+// unified recovery override (poor recovery dampens BOTH lifting and cardio), and
+// cardio progression on top of the deterministic strength rules above. It remains
+// a pure function: the tool handler assembles inputs and passes them in.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type Goal =
+  | 'strength' | 'hypertrophy' | 'endurance' | 'general_fitness'
+  | 'weight_loss' | 'athletic_performance';
+
+export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
+
+export interface ProfileForProgression {
+  goal?: Goal | null;
+  experience_level?: ExperienceLevel | null;
+  injuries?: string | null;
+  equipment?: string[] | null;
+}
+
+/**
+ * Unified recovery input, aligned to the get_recovery_summary tool shape.
+ * hrv_latest_ms / hrv_baseline_ms come from the `hrv` block; avg_sleep_hours from
+ * the `sleep` block.
+ */
+export interface RecoveryV2 {
+  avg_sleep_hours: number | null;
+  hrv_latest_ms: number | null;
+  hrv_baseline_ms: number | null;
+  resting_hr_bpm?: number | null;
+}
+
+export type CardioSuggestionType =
+  | 'increase_distance' | 'increase_pace' | 'add_intervals'
+  | 'reduce_cardio_load' | 'maintain_cardio';
+
+export interface CardioSuggestion {
+  activity_type: string;
+  suggestion_type: CardioSuggestionType;
+  confidence: Confidence;
+  reasoning: string;
+}
+
+/** Cardio inputs derived from get_cardio_analytics. */
+export interface CardioProgressionInput {
+  activity_type: string;
+  pace_trend: TrendDirection;              // 'increasing' = getting faster
+  weekly_distance_trend: TrendDirection;
+  avg_weekly_distance_meters: number;
+  effort_count: number;
+}
+
+export type TrendDirection = 'increasing' | 'decreasing' | 'stable';
+
+export interface ProgressionV2Input {
+  exercise_history: ExerciseHistory[];
+  recovery: RecoveryV2;
+  program_targets: ProgramTarget[];
+  profile?: ProfileForProgression | null;
+  cardio?: CardioProgressionInput[] | null;
+  scope?: Scope;
+}
+
+export interface ProgressionV2Result {
+  recovery_state: 'compromised' | 'ok';
+  goal: Goal | null;
+  experience: ExperienceLevel | null;
+  strength_suggestions: Suggestion[];
+  cardio_suggestions: CardioSuggestion[];
+  guardrail_notes: string[];
+}
+
+// ─── Recovery: unified override ───────────────────────────────────────────────
+
+/** Convert the V2 recovery shape into the legacy RecoverySummary for reuse. */
+function toLegacyRecovery(r: RecoveryV2): RecoverySummary {
+  return {
+    avg_sleep_hours: r.avg_sleep_hours ?? 8, // neutral default when unknown
+    hrv_ms: r.hrv_latest_ms ?? 0,
+    hrv_baseline_ms: r.hrv_baseline_ms ?? 0,
+    resting_hr_bpm: r.resting_hr_bpm ?? 60,
+  };
+}
+
+/** Recovery is compromised when sleep < 6h OR HRV is 20%+ below baseline. */
+export function isRecoveryCompromised(r: RecoveryV2): boolean {
+  return evaluateRecoveryConcern(toLegacyRecovery(r)).triggered;
+}
+
+// ─── Experience-scaled increments ─────────────────────────────────────────────
+
+/**
+ * Scale the base weight increment by experience. Beginners progress faster
+ * (linear), advanced lifters slower.
+ */
+export function experienceIncrementMultiplier(exp?: ExperienceLevel | null): number {
+  switch (exp) {
+    case 'beginner': return 1.5;
+    case 'advanced': return 0.5;
+    case 'intermediate':
+    default:
+      return 1.0;
+  }
+}
+
+// ─── Goal weighting ───────────────────────────────────────────────────────────
+
+/**
+ * When an exercise is "ready to progress" (base rule = increase_weight), goals
+ * bias HOW we progress: strength/athletic favor load; hypertrophy favors adding
+ * a set (volume) once load is moderate; endurance/weight_loss favor volume too.
+ */
+function applyGoalWeighting(
+  base: Suggestion,
+  ex: ExerciseHistory,
+  goal: Goal | null | undefined,
+  exp: ExperienceLevel | null | undefined
+): Suggestion {
+  if (base.suggestion_type !== 'increase_weight') return base;
+
+  const favorsVolume = goal === 'hypertrophy' || goal === 'endurance' || goal === 'weight_loss';
+  const favorsLoad = goal === 'strength' || goal === 'athletic_performance';
+
+  if (favorsVolume) {
+    // Add a set instead of (or in addition to) load, capped to avoid runaway volume.
+    const suggestedSets = base.current_values.sets + 1;
+    return {
+      ...base,
+      suggestion_type: 'increase_weight',
+      suggested_values: { weight: base.current_values.weight, sets: suggestedSets },
+      reasoning: `${base.reasoning} Goal is ${goal}: adding a set to drive volume rather than load.`,
+    };
+  }
+
+  if (favorsLoad) {
+    // Scale the load increment by experience.
+    const increment = getWeightIncrement(ex.muscle_group) * experienceIncrementMultiplier(exp);
+    return {
+      ...base,
+      suggested_values: {
+        weight: roundToHalf(base.current_values.weight + increment),
+        sets: base.current_values.sets,
+      },
+      reasoning: `${base.reasoning} Goal is ${goal}: prioritizing load (${exp ?? 'intermediate'} increment).`,
+    };
+  }
+
+  return base;
+}
+
+// ─── Injury / equipment guardrails ────────────────────────────────────────────
+
+/**
+ * Detect whether an exercise likely conflicts with a stated injury. Heuristic
+ * keyword mapping — the LLM does the nuanced reasoning, this is a safety net that
+ * downgrades progression to "maintain" and flags the conflict.
+ */
+const INJURY_EXERCISE_CONFLICTS: { injury: RegExp; exercises: RegExp }[] = [
+  { injury: /shoulder|rotator|impinge/i, exercises: /overhead|ohp|press|snatch|jerk|lateral raise/i },
+  { injury: /knee|acl|meniscus|patell/i, exercises: /squat|lunge|leg press|step[- ]?up|pistol/i },
+  { injury: /(lower ?back|lumbar|disc|herniat|sciatic)/i, exercises: /deadlift|good ?morning|bent[- ]?over row|barbell row/i },
+  { injury: /elbow|tendin|tennis/i, exercises: /curl|extension|chin[- ]?up|pull[- ]?up/i },
+  { injury: /wrist/i, exercises: /front squat|clean|push[- ]?up/i },
+  { injury: /ankle|achilles/i, exercises: /calf raise|running|jump|box jump/i },
+];
+
+export function exerciseConflictsWithInjury(
+  exerciseName: string,
+  injuries: string | null | undefined
+): boolean {
+  if (!injuries) return false;
+  for (const rule of INJURY_EXERCISE_CONFLICTS) {
+    if (rule.injury.test(injuries) && rule.exercises.test(exerciseName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ─── Cardio progression rules ─────────────────────────────────────────────────
+
+/**
+ * Cardio progression: when recovery is compromised, reduce load. Otherwise:
+ *  - improving pace + adequate volume → add intervals or push pace
+ *  - flat/declining pace with low volume → increase distance
+ *  - declining pace with high volume → reduce load (overreaching)
+ */
+export function evaluateCardioProgression(
+  cardio: CardioProgressionInput,
+  recoveryCompromised: boolean
+): CardioSuggestion {
+  const base = { activity_type: cardio.activity_type };
+
+  if (recoveryCompromised) {
+    return {
+      ...base,
+      suggestion_type: 'reduce_cardio_load',
+      confidence: 'high',
+      reasoning: 'Recovery is compromised — reduce cardio volume/intensity this week.',
+    };
+  }
+
+  if (cardio.effort_count < 2) {
+    return {
+      ...base,
+      suggestion_type: 'maintain_cardio',
+      confidence: 'medium',
+      reasoning: 'Not enough recent cardio data to adjust; keep building a base.',
+    };
+  }
+
+  if (cardio.pace_trend === 'increasing') {
+    // Getting faster — introduce intervals or push pace.
+    return {
+      ...base,
+      suggestion_type: 'add_intervals',
+      confidence: 'medium',
+      reasoning: 'Pace is improving; add an interval session to keep progressing.',
+    };
+  }
+
+  if (cardio.weekly_distance_trend !== 'increasing') {
+    return {
+      ...base,
+      suggestion_type: 'increase_distance',
+      confidence: 'medium',
+      reasoning: 'Pace and volume are flat; increase weekly distance ~10% to build aerobic base.',
+    };
+  }
+
+  if (cardio.pace_trend === 'decreasing' && cardio.weekly_distance_trend === 'increasing') {
+    return {
+      ...base,
+      suggestion_type: 'reduce_cardio_load',
+      confidence: 'medium',
+      reasoning: 'Pace declining while volume rises — likely overreaching; hold or reduce volume.',
+    };
+  }
+
+  return {
+    ...base,
+    suggestion_type: 'maintain_cardio',
+    confidence: 'medium',
+    reasoning: 'Cardio is on track; maintain current load.',
+  };
+}
+
+// ─── Main V2 evaluation ────────────────────────────────────────────────────────
+
+/**
+ * Unified, profile-aware progression. Deterministic and pure.
+ */
+export function evaluateProgressionV2(input: ProgressionV2Input): ProgressionV2Result {
+  const goal = input.profile?.goal ?? null;
+  const experience = input.profile?.experience_level ?? null;
+  const injuries = input.profile?.injuries ?? null;
+
+  const recoveryCompromised = isRecoveryCompromised(input.recovery);
+  const guardrail_notes: string[] = [];
+
+  // Base strength suggestions from the deterministic engine (reuses recovery rule).
+  const baseInput: ProgressionInput = {
+    exercise_history: input.exercise_history,
+    recovery_summary: toLegacyRecovery(input.recovery),
+    program_targets: input.program_targets,
+    scope: input.scope ?? 'full_program',
+  };
+  const baseSuggestions = evaluateProgression(baseInput);
+
+  const strength_suggestions = baseSuggestions.map((s) => {
+    const ex = input.exercise_history.find((e) => e.exercise_name === s.exercise_name);
+
+    // Injury guardrail: downgrade progression on conflicting movements.
+    if (exerciseConflictsWithInjury(s.exercise_name, injuries)) {
+      guardrail_notes.push(
+        `Held ${s.exercise_name} at maintenance due to a stated injury conflict; suggest a safer variation.`
+      );
+      return {
+        ...s,
+        suggestion_type: 'maintain' as SuggestionType,
+        suggested_values: s.current_values,
+        confidence: 'high' as Confidence,
+        reasoning: `Progression withheld: this movement may aggravate a stated injury. Consider a safer alternative.`,
+      };
+    }
+
+    // Goal weighting only applies to ready-to-progress exercises.
+    if (ex) {
+      return applyGoalWeighting(s, ex, goal, experience);
+    }
+    return s;
+  });
+
+  const cardio_suggestions = (input.cardio ?? []).map((c) =>
+    evaluateCardioProgression(c, recoveryCompromised)
+  );
+
+  return {
+    recovery_state: recoveryCompromised ? 'compromised' : 'ok',
+    goal,
+    experience,
+    strength_suggestions,
+    cardio_suggestions,
+    guardrail_notes,
+  };
+}

@@ -22,6 +22,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
+import { publishTemplate } from '@/services/template-service';
 import { supabase } from '@/utils/supabase';
 
 interface ProgramListItem {
@@ -259,9 +260,9 @@ export default function ProgramLibraryScreen() {
                   accessibilityLabel={`Activate ${program.name}`}
                 >
                   {activating === program.id ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={theme.accentText} />
                   ) : (
-                    <ThemedText style={styles.activateButtonText}>Activate</ThemedText>
+                    <ThemedText style={[styles.activateButtonText, { color: theme.accentText }]}>Activate</ThemedText>
                   )}
                 </Pressable>
               )}

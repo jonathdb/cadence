@@ -32,26 +32,24 @@ function createMockSupabaseForJournal(
 }
 
 function createMockSupabaseForHealth(options: {
-  sleepData?: unknown;
-  hrData?: unknown;
-  activityData?: unknown;
+  sleepRows?: unknown[];
+  hrRows?: unknown[];
+  activityRows?: unknown[];
   workoutsData?: unknown;
   workoutsError?: unknown;
 }) {
   return {
     from: vi.fn((table: string) => {
+      // get_recovery_summary now fetches ALL rows in the window and averages.
+      // The query chain ends at .order() returning an array (no .limit/.single).
       if (table === 'imported_sleep_summaries') {
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               gte: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockReturnValue({
-                    single: vi.fn().mockResolvedValue({
-                      data: options.sleepData ?? null,
-                      error: options.sleepData ? null : { message: 'Not found' },
-                    }),
-                  }),
+                order: vi.fn().mockResolvedValue({
+                  data: options.sleepRows ?? [],
+                  error: null,
                 }),
               }),
             }),
@@ -63,13 +61,9 @@ function createMockSupabaseForHealth(options: {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               gte: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockReturnValue({
-                    single: vi.fn().mockResolvedValue({
-                      data: options.hrData ?? null,
-                      error: options.hrData ? null : { message: 'Not found' },
-                    }),
-                  }),
+                order: vi.fn().mockResolvedValue({
+                  data: options.hrRows ?? [],
+                  error: null,
                 }),
               }),
             }),
@@ -81,13 +75,9 @@ function createMockSupabaseForHealth(options: {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               gte: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockReturnValue({
-                    single: vi.fn().mockResolvedValue({
-                      data: options.activityData ?? null,
-                      error: options.activityData ? null : { message: 'Not found' },
-                    }),
-                  }),
+                order: vi.fn().mockResolvedValue({
+                  data: options.activityRows ?? [],
+                  error: null,
                 }),
               }),
             }),
@@ -188,73 +178,74 @@ describe('Tool Handlers - Task 4.4', () => {
   });
 
   describe('get_recovery_summary', () => {
-    it('returns all health sections when data is available', async () => {
+    it('averages sleep and resting HR across the window and reports latest + HRV baseline', async () => {
       const handler = getToolHandler('get_recovery_summary')!;
       const supabase = createMockSupabaseForHealth({
-        sleepData: { date: '2025-01-15', total_duration_minutes: 480, deep_minutes: 90, rem_minutes: 120 },
-        hrData: { date: '2025-01-15', resting_bpm: 55, average_bpm: 72 },
-        activityData: { date: '2025-01-15', steps: 10000, hrv_ms: 45, vo2_max: 48.5 },
+        // most-recent-first
+        sleepRows: [
+          { date: '2025-01-15', total_duration_minutes: 480, deep_minutes: 90, rem_minutes: 120 },
+          { date: '2025-01-14', total_duration_minutes: 420, deep_minutes: 70, rem_minutes: 100 },
+        ],
+        hrRows: [
+          { date: '2025-01-15', resting_bpm: 55, average_bpm: 72, max_bpm: 150 },
+          { date: '2025-01-14', resting_bpm: 57, average_bpm: 74, max_bpm: 158 },
+        ],
+        activityRows: [
+          { date: '2025-01-15', steps: 10000, hrv_ms: 40, vo2_max: 48.5 },
+          { date: '2025-01-14', steps: 8000, hrv_ms: 50, vo2_max: 48.0 },
+        ],
       });
 
       const result = (await handler(supabase, userId, { days: 7 })) as any;
 
-      expect(result.sleep).toEqual({
-        date: '2025-01-15',
-        total_hours: 8.0,
-        deep_minutes: 90,
-        rem_minutes: 120,
-      });
-      expect(result.heart_rate).toEqual({
-        date: '2025-01-15',
-        resting_bpm: 55,
-        average_bpm: 72,
-      });
-      expect(result.activity).toEqual({
-        date: '2025-01-15',
-        steps: 10000,
-        hrv_ms: 45,
-        vo2_max: 48.5,
-      });
+      // Averages across the window
+      expect(result.sleep.avg_total_hours).toBeCloseTo(7.5, 1); // (480+420)/2 = 450min = 7.5h
+      expect(result.sleep.latest_total_hours).toBe(8.0);
+      expect(result.heart_rate.avg_resting_bpm).toBe(56); // (55+57)/2
+      expect(result.heart_rate.latest_resting_bpm).toBe(55);
+      // HRV: latest is most-recent (40), baseline is the window average (45)
+      expect(result.hrv.latest_ms).toBe(40);
+      expect(result.hrv.baseline_ms).toBe(45);
+      expect(result.window_days).toBe(7);
+      expect(result.sample_counts).toEqual({ sleep: 2, heart_rate: 2, activity: 2 });
     });
 
-    it('returns null for sections with no data', async () => {
+    it('returns null averages and latests for empty sections', async () => {
       const handler = getToolHandler('get_recovery_summary')!;
       const supabase = createMockSupabaseForHealth({});
 
       const result = (await handler(supabase, userId, {})) as any;
 
-      expect(result.sleep).toBeNull();
-      expect(result.heart_rate).toBeNull();
-      expect(result.activity).toBeNull();
+      expect(result.sleep.avg_total_hours).toBeNull();
+      expect(result.sleep.latest_total_hours).toBeNull();
+      expect(result.heart_rate.avg_resting_bpm).toBeNull();
+      expect(result.hrv.latest_ms).toBeNull();
+      expect(result.hrv.baseline_ms).toBeNull();
     });
 
     it('defaults to 7 days when days argument is not provided', async () => {
       const handler = getToolHandler('get_recovery_summary')!;
       const supabase = createMockSupabaseForHealth({
-        sleepData: { date: '2025-01-15', total_duration_minutes: 420, deep_minutes: null, rem_minutes: null },
+        sleepRows: [{ date: '2025-01-15', total_duration_minutes: 420, deep_minutes: null, rem_minutes: null }],
       });
 
       const result = (await handler(supabase, userId, {})) as any;
 
-      expect(result.sleep).toEqual({
-        date: '2025-01-15',
-        total_hours: 7.0,
-        deep_minutes: null,
-        rem_minutes: null,
-      });
+      expect(result.window_days).toBe(7);
+      expect(result.sleep.avg_total_hours).toBe(7.0);
+      expect(result.sleep.latest_total_hours).toBe(7.0);
     });
 
     it('never returns raw_payload or raw record fields', async () => {
       const handler = getToolHandler('get_recovery_summary')!;
       const supabase = createMockSupabaseForHealth({
-        sleepData: { date: '2025-01-15', total_duration_minutes: 450, deep_minutes: 80, rem_minutes: 100 },
-        hrData: { date: '2025-01-15', resting_bpm: 60, average_bpm: 75 },
-        activityData: { date: '2025-01-15', steps: 8000, hrv_ms: 42, vo2_max: 45 },
+        sleepRows: [{ date: '2025-01-15', total_duration_minutes: 450, deep_minutes: 80, rem_minutes: 100 }],
+        hrRows: [{ date: '2025-01-15', resting_bpm: 60, average_bpm: 75, max_bpm: 160 }],
+        activityRows: [{ date: '2025-01-15', steps: 8000, hrv_ms: 42, vo2_max: 45 }],
       });
 
       const result = (await handler(supabase, userId, { days: 7 })) as any;
 
-      // Verify no raw fields leak
       const resultStr = JSON.stringify(result);
       expect(resultStr).not.toContain('raw_payload');
       expect(resultStr).not.toContain('raw_record_id');

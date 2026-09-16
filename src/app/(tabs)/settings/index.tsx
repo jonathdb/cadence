@@ -1,55 +1,79 @@
 /**
- * Main settings hub screen.
- * Shows user email, sign-out button, and navigation links to sub-screens:
- * API Keys, Permissions, Spotify, Health (native only).
- * Includes inline toggles for session preferences (rest timer auto-start).
+ * Settings hub — Profile and Settings (Kinetic Obsidian).
+ *
+ * Account profile card, AI Coach Engine section, session automation toggle,
+ * integrations & hardware links, and sign out. Preserves all existing data,
+ * toggles, capability filtering, and navigation behavior.
  *
  * Requirements: 3.1, 15.2, 15.3, 23.1, 23.2, 23.3, 25.1, 12.1
  */
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AIPlanCard } from '@/components/AIPlanCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radii, Spacing } from '@/constants/theme';
+import { Badge } from '@/components/ui/Badge';
+import { DestructiveButton } from '@/components/ui/Button';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { Icon, type IconName } from '@/components/ui/Icon';
+import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAiTierStore } from '@/store/ai-tier';
 
 interface SettingsLink {
   label: string;
   description: string;
-  route: '/(tabs)/settings/api-keys' | '/(tabs)/settings/permissions' | '/(tabs)/settings/spotify' | '/(tabs)/settings/health' | '/(tabs)/settings/audit-log';
+  icon: IconName;
+  iconColor?: 'accent' | 'success' | 'tertiary';
+  route: '/(tabs)/settings/profile' | '/(tabs)/settings/api-keys' | '/(tabs)/settings/permissions' | '/(tabs)/settings/spotify' | '/(tabs)/settings/health' | '/(tabs)/settings/audit-log';
   /** If set, only show this link when the given capability is available */
   requiresCapability?: 'health' | 'notifications' | 'gps' | 'biometrics';
 }
 
-const SETTINGS_LINKS: SettingsLink[] = [
+const ENGINE_LINKS: SettingsLink[] = [
   {
     label: 'API Keys',
     description: 'Configure OpenAI or Anthropic API keys',
+    icon: 'shield',
+    iconColor: 'accent',
     route: '/(tabs)/settings/api-keys',
   },
+];
+
+const INTEGRATION_LINKS: SettingsLink[] = [
   {
-    label: 'Permissions',
-    description: 'Control what the Agent can do automatically',
-    route: '/(tabs)/settings/permissions',
-  },
-  {
-    label: 'Spotify',
+    label: 'Spotify Audio Engine',
     description: 'Connect or disconnect your Spotify account',
+    icon: 'music',
+    iconColor: 'success',
     route: '/(tabs)/settings/spotify',
   },
   {
-    label: 'Health',
+    label: 'Apple Health & Garmin',
     description: 'Connect HealthKit or Health Connect',
+    icon: 'heart',
+    iconColor: 'tertiary',
     route: '/(tabs)/settings/health',
     requiresCapability: 'health',
   },
   {
+    label: 'Agent Permissions',
+    description: 'Control what the Agent can do automatically',
+    icon: 'shield',
+    iconColor: 'accent',
+    route: '/(tabs)/settings/permissions',
+  },
+  {
     label: 'Audit Log',
     description: 'View all Agent actions and their outcomes',
+    icon: 'insights',
+    iconColor: 'tertiary',
     route: '/(tabs)/settings/audit-log',
   },
 ];
@@ -58,6 +82,7 @@ export default function SettingsIndexScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { settings, updateSetting } = useUserSettings();
   const capabilities = usePlatformCapabilities();
   const fetchTierInfo = useAiTierStore((s) => s.fetchTierInfo);
@@ -69,45 +94,97 @@ export default function SettingsIndexScreen() {
     }
   }, [session?.user?.id, fetchTierInfo]);
 
-  // Filter settings links based on platform capabilities (Req 23.2, 23.3)
-  const visibleLinks = SETTINGS_LINKS.filter((link) => {
+  const iconColorFor = (c?: 'accent' | 'success' | 'tertiary') =>
+    c === 'success' ? theme.success : c === 'tertiary' ? theme.tertiary : theme.accent;
+
+  const visibleIntegrations = INTEGRATION_LINKS.filter((link) => {
     if (!link.requiresCapability) return true;
     return capabilities[link.requiresCapability];
   });
 
+  const email = session?.user.email ?? 'Not signed in';
+  const displayName = email.split('@')[0] || 'Athlete';
+
+  const renderLink = (link: SettingsLink) => (
+    <Pressable
+      key={link.route}
+      onPress={() => router.push(link.route)}
+      accessibilityRole="button"
+      accessibilityLabel={`Navigate to ${link.label} settings`}
+    >
+      <GlassCard elevation="low" style={styles.linkCard}>
+        <View style={[styles.linkIcon, { backgroundColor: theme.backgroundHighest }]}>
+          <Icon name={link.icon} size={20} color={iconColorFor(link.iconColor)} />
+        </View>
+        <View style={styles.linkContent}>
+          <ThemedText type="titleMedium">{link.label}</ThemedText>
+          <ThemedText type="bodySmall" themeColor="textSecondary" numberOfLines={1}>
+            {link.description}
+          </ThemedText>
+        </View>
+        <Icon name="chevron-right" size={18} color={theme.textSecondary} />
+      </GlassCard>
+    </Pressable>
+  );
+
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <ThemedText type="headlineMedium">Settings</ThemedText>
-        </View>
-
-        {/* Account Section */}
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: TabBarClearance + insets.bottom },
+        ]}
+      >
+        {/* Account */}
         <View style={styles.section}>
-          <ThemedText type="labelMedium" themeColor="textSecondary">
-            ACCOUNT
-          </ThemedText>
-          <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-            <ThemedText>{session?.user.email ?? 'Not signed in'}</ThemedText>
+          <View style={styles.sectionHeaderRow}>
+            <ThemedText type="labelCaps" themeColor="textSecondary">
+              Account
+            </ThemedText>
+            <Badge label="Telemetry Live" variant="success" dot />
           </View>
+          <Pressable
+            onPress={() => router.push('/(tabs)/settings/profile')}
+            accessibilityRole="button"
+            accessibilityLabel="Edit training profile"
+          >
+            <GlassCard elevation="mid" radius="xl" style={styles.profileCard}>
+              <View style={[styles.avatar, { backgroundColor: theme.accentSoft }]}>
+                <Icon name="person" size={24} color={theme.accent} />
+              </View>
+              <View style={styles.profileText}>
+                <ThemedText type="headlineSmall" numberOfLines={1}>
+                  {displayName}
+                </ThemedText>
+                <ThemedText type="bodySmall" themeColor="textSecondary" numberOfLines={1}>
+                  {email}
+                </ThemedText>
+              </View>
+              <Icon name="chevron-right" size={18} color={theme.textSecondary} />
+            </GlassCard>
+          </Pressable>
         </View>
 
-        {/* AI Plan Section */}
+        {/* AI Coach Engine */}
         <View style={styles.section}>
-          <ThemedText type="labelMedium" themeColor="textSecondary">
-            AI PLAN
+          <ThemedText type="labelCaps" themeColor="textSecondary">
+            AI Coach Engine
           </ThemedText>
           <AIPlanCard />
+          {ENGINE_LINKS.map(renderLink)}
         </View>
 
-        {/* Session Preferences (Req 15.2, 15.3) */}
+        {/* Session automation (Req 15.2, 15.3) */}
         <View style={styles.section}>
-          <ThemedText type="labelMedium" themeColor="textSecondary">
-            SESSION
+          <ThemedText type="labelCaps" themeColor="textSecondary">
+            Workout Session Automation
           </ThemedText>
-          <View style={[styles.toggleCard, { backgroundColor: theme.backgroundElement }]}>
+          <GlassCard elevation="low" style={styles.toggleCard}>
+            <View style={[styles.linkIcon, { backgroundColor: theme.backgroundHighest }]}>
+              <Icon name="timer" size={20} color={theme.accent} />
+            </View>
             <View style={styles.toggleContent}>
-              <ThemedText style={styles.toggleLabel}>Rest Timer Auto-Start</ThemedText>
+              <ThemedText type="titleMedium">Rest Timer Auto-Start</ThemedText>
               <ThemedText type="bodySmall" themeColor="textSecondary">
                 Automatically start the rest timer after logging a set
               </ThemedText>
@@ -115,48 +192,31 @@ export default function SettingsIndexScreen() {
             <Switch
               value={settings.rest_timer_auto_start}
               onValueChange={(value) => updateSetting('rest_timer_auto_start', value)}
-              trackColor={{ false: theme.border, true: theme.accent }}
+              trackColor={{ false: theme.backgroundHighest, true: theme.accent }}
+              thumbColor="#ffffff"
+              ios_backgroundColor={theme.backgroundHighest}
               accessibilityLabel="Toggle rest timer auto-start"
               accessibilityRole="switch"
             />
-          </View>
+          </GlassCard>
         </View>
 
-        {/* Navigation Links */}
+        {/* Integrations & Hardware */}
         <View style={styles.section}>
-          <ThemedText type="labelMedium" themeColor="textSecondary">
-            CONFIGURATION
+          <ThemedText type="labelCaps" themeColor="textSecondary">
+            Integrations & Hardware
           </ThemedText>
-          {visibleLinks.map((link) => (
-            <Pressable
-              key={link.route}
-              style={[styles.linkCard, { backgroundColor: theme.backgroundElement }]}
-              onPress={() => router.push(link.route)}
-              accessibilityRole="button"
-              accessibilityLabel={`Navigate to ${link.label} settings`}
-            >
-              <View style={styles.linkContent}>
-                <ThemedText style={styles.linkLabel}>{link.label}</ThemedText>
-                <ThemedText type="bodySmall" themeColor="textSecondary">
-                  {link.description}
-                </ThemedText>
-              </View>
-              <ThemedText themeColor="textSecondary">›</ThemedText>
-            </Pressable>
-          ))}
+          {visibleIntegrations.map(renderLink)}
         </View>
 
         {/* Sign Out */}
-        <View style={styles.section}>
-          <Pressable
-            style={[styles.signOutButton, { backgroundColor: theme.error }]}
-            onPress={signOut}
-            accessibilityRole="button"
-            accessibilityLabel="Sign out of your account"
-          >
-            <ThemedText style={styles.signOutText}>Sign Out</ThemedText>
-          </Pressable>
-        </View>
+        <DestructiveButton
+          label="Sign Out of Cadence"
+          icon={<Icon name="sign-out" size={18} color={theme.error} />}
+          fullWidth
+          onPress={signOut}
+          accessibilityLabel="Sign out of your account"
+        />
       </ScrollView>
     </ThemedView>
   );
@@ -167,58 +227,65 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: Spacing.four,
+    padding: Spacing.three,
     gap: Spacing.four,
-  },
-  header: {
-    paddingTop: Spacing.five,
   },
   section: {
     gap: Spacing.two,
   },
-  card: {
-    padding: Spacing.three,
-    borderRadius: Radii.medium,
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  // Profile
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.twoHalf,
+    padding: Spacing.three,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: Radii.medium,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  // Links
   linkCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.three,
+    gap: Spacing.twoHalf,
+    padding: Spacing.twoHalf,
+  },
+  linkIcon: {
+    width: 40,
+    height: 40,
     borderRadius: Radii.medium,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   linkContent: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
-  linkLabel: {
-    fontWeight: '600',
-    fontSize: 16,
-  },
+  // Toggle
   toggleCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.three,
-    borderRadius: Radii.medium,
+    gap: Spacing.twoHalf,
+    padding: Spacing.twoHalf,
   },
   toggleContent: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
-  },
-  toggleLabel: {
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  signOutButton: {
-    borderRadius: Radii.medium,
-    padding: Spacing.two + 4,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  signOutText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

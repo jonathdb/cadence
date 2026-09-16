@@ -1,8 +1,9 @@
 /**
- * Session tab entry point.
- * Displays session history list (last 20 sessions sorted by date descending)
- * and a "Continue Session" card when an in-progress session exists.
- * Users can also start a new session from their active program days.
+ * Session tab — Active Session Hub (Kinetic Obsidian).
+ *
+ * Preserves all existing behavior: continue an in-progress session, launch
+ * Freestyle / Track Route, start a scheduled program day, and browse recent
+ * completed sessions. Re-skinned with the Kinetic Obsidian design system.
  *
  * Requirements: 16.1, 16.2, 16.3, 16.4
  */
@@ -15,10 +16,14 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radii, Spacing } from '@/constants/theme';
+import { Badge } from '@/components/ui/Badge';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { Icon } from '@/components/ui/Icon';
+import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useCadenceStore, type Session } from '@/store';
 import { supabase } from '@/utils/supabase';
@@ -84,6 +89,7 @@ interface ProgramDayListItem {
 export default function SessionIndexScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   // Store data
   const activeSession = useCadenceStore((s) => s.activeSession);
@@ -196,29 +202,28 @@ export default function SessionIndexScreen() {
 
     return (
       <Pressable
-        style={[styles.sessionCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.border }]}
         onPress={() => handleSessionTap(item)}
         accessibilityRole="button"
         accessibilityLabel={`${dayName} session on ${date}, ${duration}, ${totalSets} sets. Tap to view summary.`}
       >
-        <View style={styles.sessionCardContent}>
-          <View style={styles.sessionCardLeft}>
-            <ThemedText style={[styles.sessionDayName, { color: theme.text }]}>
-              {dayName}
-            </ThemedText>
-            <ThemedText type="bodySmall" themeColor="textSecondary">
-              {date}
-            </ThemedText>
+        <GlassCard elevation="low" style={styles.sessionCard}>
+          <View style={styles.rowBetween}>
+            <View style={styles.flexMin}>
+              <ThemedText type="titleMedium">{dayName}</ThemedText>
+              <ThemedText type="bodySmall" themeColor="textSecondary">
+                {date}
+              </ThemedText>
+            </View>
+            <View style={styles.sessionCardRight}>
+              <ThemedText type="labelMedium" themeColor="textSecondary">
+                {duration}
+              </ThemedText>
+              <ThemedText type="labelMedium" style={{ color: theme.accent }}>
+                {totalSets} {totalSets === 1 ? 'set' : 'sets'}
+              </ThemedText>
+            </View>
           </View>
-          <View style={styles.sessionCardRight}>
-            <ThemedText type="labelMedium" themeColor="textSecondary">
-              {duration}
-            </ThemedText>
-            <ThemedText type="labelMedium" style={{ color: theme.accent }}>
-              {totalSets} {totalSets === 1 ? 'set' : 'sets'}
-            </ThemedText>
-          </View>
-        </View>
+        </GlassCard>
       </Pressable>
     );
   }, [theme, getDayName, handleSessionTap]);
@@ -233,106 +238,209 @@ export default function SessionIndexScreen() {
     );
   }
 
+  const sessionCount = sortedSessions.length;
+
   return (
     <ThemedView style={styles.container}>
       <FlatList
         data={sortedSessions}
         keyExtractor={(item) => item.id}
         renderItem={renderSessionItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: TabBarClearance + insets.bottom },
+        ]}
         ListHeaderComponent={
-          <>
+          <View style={styles.headerStack}>
+            {/* Phase status hero — driven by the active program when present */}
+            {activeProgram ? (
+              <GlassCard elevation="mid" radius="xl" style={styles.hero}>
+                <View style={styles.rowBetween}>
+                  <View style={styles.flexMin}>
+                    <View style={styles.heroTagRow}>
+                      <Badge label="Active Cycle" variant="success" dot />
+                    </View>
+                    <ThemedText type="headlineMedium" style={styles.heroTitle}>
+                      {activeProgram.name}
+                    </ThemedText>
+                    {programName ? (
+                      <ThemedText type="bodySmall" themeColor="textSecondary" numberOfLines={1}>
+                        {programName}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Telemetry micro-bar */}
+                <View style={[styles.microBar, { backgroundColor: theme.backgroundElement }]}>
+                  <View style={styles.microMetric}>
+                    <ThemedText type="labelCaps" themeColor="textSecondary">
+                      Scheduled
+                    </ThemedText>
+                    <ThemedText type="titleMedium" style={{ color: theme.accent }}>
+                      {days.length}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.microMetric}>
+                    <ThemedText type="labelCaps" themeColor="textSecondary">
+                      Logged
+                    </ThemedText>
+                    <ThemedText type="titleMedium" style={{ color: theme.success }}>
+                      {sessionCount}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.microMetric}>
+                    <ThemedText type="labelCaps" themeColor="textSecondary">
+                      Status
+                    </ThemedText>
+                    <ThemedText type="titleMedium" style={{ color: theme.tertiary }}>
+                      {activeSession ? 'Live' : 'Ready'}
+                    </ThemedText>
+                  </View>
+                </View>
+              </GlassCard>
+            ) : null}
+
             {/* Continue Session Card (Req 16.4) */}
             {activeSession && (
               <Pressable
-                style={[styles.continueCard, { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}
                 onPress={handleContinueSession}
                 accessibilityRole="button"
                 accessibilityLabel={`Continue session: ${activeSession.programDayId ? programDayNames.get(activeSession.programDayId) || 'Workout' : 'Freestyle'}. ${formatElapsed(activeSession.startedAt)}`}
               >
-                <View style={styles.continueCardContent}>
-                  <View style={styles.continueCardLeft}>
-                    <ThemedText style={[styles.continueLabel, { color: theme.accent }]}>
-                      Continue Session
-                    </ThemedText>
-                    <ThemedText style={[styles.continueSessionName, { color: theme.text }]}>
-                      {activeSession.programDayId
-                        ? programDayNames.get(activeSession.programDayId) || 'Workout'
-                        : 'Freestyle'}
-                    </ThemedText>
+                <GlassCard active elevation="mid" style={styles.continueCard}>
+                  <View style={styles.rowBetween}>
+                    <View style={styles.flexMin}>
+                      <ThemedText type="labelCaps" style={{ color: theme.accent }}>
+                        Continue Session
+                      </ThemedText>
+                      <ThemedText type="headlineSmall">
+                        {activeSession.programDayId
+                          ? programDayNames.get(activeSession.programDayId) || 'Workout'
+                          : 'Freestyle'}
+                      </ThemedText>
+                      <ThemedText type="bodySmall" themeColor="textSecondary">
+                        {formatElapsed(activeSession.startedAt)}
+                      </ThemedText>
+                    </View>
+                    <View style={[styles.continueArrow, { backgroundColor: theme.accent }]}>
+                      <Icon name="arrow-forward" size={20} color={theme.accentText} />
+                    </View>
                   </View>
-                  <View style={styles.continueCardRight}>
-                    <ThemedText type="bodySmall" themeColor="textSecondary">
-                      {formatElapsed(activeSession.startedAt)}
-                    </ThemedText>
-                    <ThemedText style={[styles.continueArrow, { color: theme.accent }]}>
-                      →
-                    </ThemedText>
-                  </View>
-                </View>
+                </GlassCard>
               </Pressable>
             )}
 
-            {/* Start New Session Section */}
+            {/* Quick Dispatch */}
             {days.length > 0 && (
-              <View style={styles.startSection}>
-                <ThemedText type="headlineSmall" style={styles.sectionTitle}>
-                  Start Session
-                </ThemedText>
-                <ThemedText type="bodySmall" themeColor="textSecondary">
-                  {programName}
-                </ThemedText>
+              <View style={styles.section}>
+                <View style={styles.sectionHeaderRow}>
+                  <ThemedText type="labelCaps" themeColor="textSecondary">
+                    Quick Dispatch
+                  </ThemedText>
+                  <Icon name="bolt" size={16} color={theme.textSecondary} />
+                </View>
 
-                {/* Freestyle Session button (Req 8.1) */}
-                <Pressable
-                  style={[styles.dayCard, { borderColor: theme.accent, backgroundColor: theme.accentSoft }]}
+                <DispatchTile
+                  icon="dumbbell"
+                  iconColor={theme.accent}
+                  title="Freestyle Workout"
+                  subtitle="Weight & rep telemetry • Manual mode"
                   onPress={() => router.push('/(tabs)/session/freestyle')}
-                  accessibilityRole="button"
                   accessibilityLabel="Start a freestyle session without a program day"
-                >
-                  <View style={[styles.dayBadge, { backgroundColor: theme.accent }]}>
-                    <ThemedText style={styles.dayBadgeText}>🏋️</ThemedText>
-                  </View>
-                  <ThemedText style={[styles.dayName, { color: theme.text }]}>Freestyle Session</ThemedText>
-                </Pressable>
-
-                {/* Track Route button */}
-                <Pressable
-                  style={[styles.dayCard, { borderColor: theme.success, backgroundColor: theme.successSoft }]}
+                />
+                <DispatchTile
+                  icon="run"
+                  iconColor={theme.success}
+                  title="Track Outdoor Route"
+                  subtitle="Live stride cadence & pace telemetry"
+                  badge={<Badge label="GPS Ready" variant="success" />}
                   onPress={() => router.push('/(tabs)/session/route')}
-                  accessibilityRole="button"
                   accessibilityLabel="Track a running or walking route"
-                >
-                  <View style={[styles.dayBadge, { backgroundColor: theme.success }]}>
-                    <ThemedText style={styles.dayBadgeText}>🏃</ThemedText>
-                  </View>
-                  <ThemedText style={[styles.dayName, { color: theme.text }]}>Track Route</ThemedText>
-                </Pressable>
+                />
+              </View>
+            )}
 
-                {days.map((day) => (
-                  <Pressable
-                    key={day.id}
-                    style={[styles.dayCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}
-                    onPress={() => handleStartDay(day.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Start session for Day ${day.day_number}: ${day.name}`}
-                  >
-                    <View style={[styles.dayBadge, { backgroundColor: theme.accent }]}>
-                      <ThemedText style={styles.dayBadgeText}>{day.day_number}</ThemedText>
-                    </View>
-                    <ThemedText style={[styles.dayName, { color: theme.text }]}>{day.name}</ThemedText>
-                  </Pressable>
-                ))}
+            {/* Scheduled Workouts */}
+            {days.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeaderRow}>
+                  <View style={styles.rowInline}>
+                    <ThemedText type="labelCaps" themeColor="textSecondary">
+                      Scheduled Workouts
+                    </ThemedText>
+                    <View style={[styles.pip, { backgroundColor: theme.accent }]} />
+                  </View>
+                  {programName ? (
+                    <ThemedText type="labelCaps" style={{ color: theme.accent }} numberOfLines={1}>
+                      {programName}
+                    </ThemedText>
+                  ) : null}
+                </View>
+
+                {days.map((day, index) => {
+                  const isFeatured = index === 0;
+                  return (
+                    <Pressable
+                      key={day.id}
+                      onPress={() => handleStartDay(day.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Start session for Day ${day.day_number}: ${day.name}`}
+                    >
+                      <GlassCard
+                        elevation={isFeatured ? 'high' : 'low'}
+                        active={isFeatured}
+                        style={styles.dayCard}
+                      >
+                        <View style={styles.dayRow}>
+                          <View
+                            style={[
+                              styles.dayBadge,
+                              isFeatured
+                                ? { backgroundColor: theme.accent }
+                                : { backgroundColor: theme.backgroundHighest },
+                            ]}
+                          >
+                            <ThemedText
+                              type="titleMedium"
+                              style={{ color: isFeatured ? theme.accentText : theme.textSecondary }}
+                            >
+                              {day.day_number}
+                            </ThemedText>
+                          </View>
+                          <View style={styles.flexMin}>
+                            <View style={styles.dayTitleRow}>
+                              <ThemedText type="titleMedium" numberOfLines={1}>
+                                {day.name}
+                              </ThemedText>
+                              {isFeatured ? <Badge label="Today" variant="accent" /> : null}
+                            </View>
+                            <ThemedText type="bodySmall" themeColor="textSecondary">
+                              {isFeatured ? 'Recommended next session' : 'Scheduled'}
+                            </ThemedText>
+                          </View>
+                          <Icon
+                            name={isFeatured ? 'play' : 'chevron-right'}
+                            size={isFeatured ? 22 : 18}
+                            color={isFeatured ? theme.accent : theme.textSecondary}
+                          />
+                        </View>
+                      </GlassCard>
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
 
             {/* Recent Sessions Header */}
-            {sortedSessions.length > 0 && (
-              <ThemedText type="headlineSmall" style={styles.sectionTitle}>
-                Recent Sessions
-              </ThemedText>
+            {sessionCount > 0 && (
+              <View style={styles.sectionHeaderRow}>
+                <ThemedText type="labelCaps" themeColor="textSecondary">
+                  Recent Sessions
+                </ThemedText>
+              </View>
             )}
-          </>
+          </View>
         }
         ListEmptyComponent={
           days.length === 0 ? (
@@ -346,6 +454,51 @@ export default function SessionIndexScreen() {
         }
       />
     </ThemedView>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function DispatchTile({
+  icon,
+  iconColor,
+  title,
+  subtitle,
+  badge,
+  onPress,
+  accessibilityLabel,
+}: {
+  icon: React.ComponentProps<typeof Icon>['name'];
+  iconColor: string;
+  title: string;
+  subtitle: string;
+  badge?: React.ReactNode;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
+      <GlassCard elevation="low" style={styles.dispatchTile}>
+        <View style={styles.dispatchLeft}>
+          <View style={[styles.dispatchIcon, { backgroundColor: theme.backgroundHighest }]}>
+            <Icon name={icon} size={22} color={iconColor} />
+          </View>
+          <View style={styles.flexMin}>
+            <View style={styles.dayTitleRow}>
+              <ThemedText type="headlineSmall" numberOfLines={1}>
+                {title}
+              </ThemedText>
+              {badge}
+            </View>
+            <ThemedText type="bodySmall" themeColor="textSecondary" numberOfLines={1}>
+              {subtitle}
+            </ThemedText>
+          </View>
+        </View>
+        <Icon name="arrow-forward" size={20} color={theme.textSecondary} />
+      </GlassCard>
+    </Pressable>
   );
 }
 
@@ -363,102 +516,127 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   listContent: {
-    padding: Spacing.four,
-    paddingBottom: Spacing.six,
+    padding: Spacing.three,
     gap: Spacing.two,
   },
-  // Continue Session Card
-  continueCard: {
-    borderWidth: 1,
-    borderRadius: Radii.large,
-    padding: Spacing.three,
-    marginBottom: Spacing.three,
+  headerStack: {
+    gap: Spacing.four,
   },
-  continueCardContent: {
+  rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  continueCardLeft: {
-    flex: 1,
-    gap: 2,
-  },
-  continueCardRight: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  continueLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  continueSessionName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  continueArrow: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  // Start Session Section
-  startSection: {
-    gap: Spacing.two,
-    marginBottom: Spacing.four,
-  },
-  sectionTitle: {
-    marginBottom: Spacing.one,
-  },
-  dayCard: {
+  rowInline: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radii.large,
+    gap: Spacing.two,
+  },
+  flexMin: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  section: {
+    gap: Spacing.two,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.half,
+  },
+  pip: {
+    width: 8,
+    height: 8,
+    borderRadius: Radii.full,
+  },
+  // Hero
+  hero: {
     padding: Spacing.three,
-    minHeight: 48,
+    gap: Spacing.three,
+  },
+  heroTagRow: {
+    flexDirection: 'row',
+    marginBottom: Spacing.one,
+  },
+  heroTitle: {
+    marginBottom: 2,
+  },
+  microBar: {
+    flexDirection: 'row',
+    borderRadius: Radii.large,
+    paddingVertical: Spacing.two,
+  },
+  microMetric: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  // Continue card
+  continueCard: {
+    padding: Spacing.three,
+  },
+  continueArrow: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Dispatch tiles
+  dispatchTile: {
+    padding: Spacing.twoHalf,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  dispatchLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.twoHalf,
+    flex: 1,
+    minWidth: 0,
+  },
+  dispatchIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: Radii.medium,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Day cards
+  dayCard: {
+    padding: Spacing.twoHalf,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.twoHalf,
   },
   dayBadge: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: Radii.full,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  dayBadgeText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  dayName: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Session History Cards
-  sessionCard: {
-    borderWidth: 1,
-    borderRadius: Radii.large,
-    padding: Spacing.three,
-  },
-  sessionCardContent: {
+  dayTitleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.two,
+    flexWrap: 'wrap',
   },
-  sessionCardLeft: {
-    flex: 1,
-    gap: 2,
+  // Session history
+  sessionCard: {
+    padding: Spacing.three,
   },
   sessionCardRight: {
     alignItems: 'flex-end',
     gap: 4,
   },
-  sessionDayName: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  // Empty State
+  // Empty state
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',

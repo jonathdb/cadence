@@ -168,9 +168,9 @@ export default function ApiKeysScreen() {
             accessibilityLabel="Save OpenAI API key"
           >
             {isSaving ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={theme.accentText} size="small" />
             ) : (
-              <ThemedText style={styles.buttonText}>
+              <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>
                 {keyStatus.openai ? 'Replace OpenAI Key' : 'Save OpenAI Key'}
               </ThemedText>
             )}
@@ -208,9 +208,9 @@ export default function ApiKeysScreen() {
             accessibilityLabel="Save Anthropic API key"
           >
             {isSaving ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={theme.accentText} size="small" />
             ) : (
-              <ThemedText style={styles.buttonText}>
+              <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>
                 {keyStatus.anthropic ? 'Replace Anthropic Key' : 'Save Anthropic Key'}
               </ThemedText>
             )}

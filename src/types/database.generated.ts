@@ -195,6 +195,7 @@ export type Database = {
       exercises: {
         Row: {
           created_at: string | null
+          equipment: string | null
           id: string
           instructions: string | null
           is_global: boolean | null
@@ -206,6 +207,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          equipment?: string | null
           id?: string
           instructions?: string | null
           is_global?: boolean | null
@@ -217,6 +219,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          equipment?: string | null
           id?: string
           instructions?: string | null
           is_global?: boolean | null
@@ -752,18 +755,21 @@ export type Database = {
           day_number: number
           id: string
           name: string
+          planned_duration_minutes: number | null
           program_id: string
         }
         Insert: {
           day_number: number
           id?: string
           name: string
+          planned_duration_minutes?: number | null
           program_id: string
         }
         Update: {
           day_number?: number
           id?: string
           name?: string
+          planned_duration_minutes?: number | null
           program_id?: string
         }
         Relationships: [
@@ -999,6 +1005,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_profiles: {
+        Row: {
+          bodyweight: number | null
+          bodyweight_unit: string
+          created_at: string | null
+          equipment: string[]
+          experience_level: string | null
+          goal: string | null
+          id: string
+          injuries: string | null
+          preferred_training_days: string[]
+          training_notes: string | null
+          updated_at: string | null
+          user_id: string
+          weekly_frequency: number | null
+        }
+        Insert: {
+          bodyweight?: number | null
+          bodyweight_unit?: string
+          created_at?: string | null
+          equipment?: string[]
+          experience_level?: string | null
+          goal?: string | null
+          id?: string
+          injuries?: string | null
+          preferred_training_days?: string[]
+          training_notes?: string | null
+          updated_at?: string | null
+          user_id: string
+          weekly_frequency?: number | null
+        }
+        Update: {
+          bodyweight?: number | null
+          bodyweight_unit?: string
+          created_at?: string | null
+          equipment?: string[]
+          experience_level?: string | null
+          goal?: string | null
+          id?: string
+          injuries?: string | null
+          preferred_training_days?: string[]
+          training_notes?: string | null
+          updated_at?: string | null
+          user_id?: string
+          weekly_frequency?: number | null
+        }
+        Relationships: []
       }
       user_settings: {
         Row: {

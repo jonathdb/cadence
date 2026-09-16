@@ -13,8 +13,13 @@ let Purchases: typeof import('react-native-purchases').default | null = null;
 
 async function getPurchases() {
   if (!Purchases) {
-    const mod = await import('react-native-purchases');
-    Purchases = mod.default;
+    try {
+      const mod = await import('react-native-purchases');
+      Purchases = mod.default;
+    } catch {
+      // Native module unavailable (e.g. web, or not linked) — degrade gracefully
+      return null;
+    }
   }
   return Purchases;
 }
@@ -38,6 +43,7 @@ export async function initPurchases(userId: string): Promise<void> {
   if (Platform.OS === 'web') return; // RevenueCat not available on web
 
   const RC = await getPurchases();
+  if (!RC) return; // Native module unavailable
 
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
@@ -62,6 +68,7 @@ export async function hasProEntitlement(): Promise<boolean> {
 
   try {
     const RC = await getPurchases();
+    if (!RC) return false;
     const customerInfo = await RC.getCustomerInfo();
     return customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
   } catch {
@@ -81,6 +88,7 @@ export async function purchasePro(): Promise<boolean> {
   }
 
   const RC = await getPurchases();
+  if (!RC) throw new Error('In-app purchases are not available on this device');
   const offerings = await RC.getOfferings();
 
   if (!offerings.current || offerings.current.availablePackages.length === 0) {
@@ -112,6 +120,7 @@ export async function restorePurchases(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
 
   const RC = await getPurchases();
+  if (!RC) return false;
   const customerInfo = await RC.restorePurchases();
   return customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
 }
@@ -125,5 +134,6 @@ export async function openManageSubscriptions(): Promise<void> {
   if (Platform.OS === 'web') return;
 
   const RC = await getPurchases();
+  if (!RC) return;
   await RC.showManageSubscriptions();
 }

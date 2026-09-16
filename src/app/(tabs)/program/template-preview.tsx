@@ -22,7 +22,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { cloneTemplate, getTemplateBySlug } from '@/services/template-service';
+import { cloneTemplate, getTemplateBySlug, unpublishTemplate } from '@/services/template-service';
 import type { ProgramTemplate } from '@/types/template';
 import { supabase } from '@/utils/supabase';
 
@@ -202,9 +202,9 @@ export default function TemplatePreviewScreen() {
           accessibilityLabel="Clone this template to your program library"
         >
           {isCloning ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={theme.accentText} size="small" />
           ) : (
-            <ThemedText style={styles.cloneButtonText}>
+            <ThemedText style={[styles.cloneButtonText, { color: theme.accentText }]}>
               Clone to My Library
             </ThemedText>
           )}

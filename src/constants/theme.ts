@@ -1,8 +1,12 @@
 /**
- * Cadence Design System
+ * Cadence Design System — "Kinetic Obsidian"
  *
- * Dark-first fitness app. Accent: teal/cyan for energy without generic blue.
- * System fonts throughout. Designed for iOS (HIG) and Android (M3) native feel.
+ * High-performance biometric dark aesthetic for serious athletes and AI-driven
+ * workout tracking. Deep obsidian foundations, glassmorphic depth tiers,
+ * luminous electric-cyan accents, and emerald feedback cues.
+ *
+ * Typography: Plus Jakarta Sans (loaded at runtime; system fallback).
+ * Dark is the primary/design experience; light remains functional.
  */
 
 import { Platform } from 'react-native';
@@ -14,60 +18,75 @@ import { Platform } from 'react-native';
 /**
  * Semantic color tokens for light and dark themes.
  * Dark is primary, light is available.
+ *
+ * Kinetic Obsidian mapping (dark):
+ * - accent            → electric cyan #00f2fe (Stitch `primary-container`)
+ * - onAccent          → near-black cyan-ink #002022 (Stitch `on-primary-fixed`)
+ * - secondary/success → emerald #10b981 / #4edea3
+ * - tertiary          → sky #89ceff
  */
 export const Colors = {
   dark: {
-    // Backgrounds
-    background: '#0f1114',           // Near-black with slight warmth
-    backgroundElevated: '#1a1d21',   // Cards, sheets, modals
-    backgroundElement: '#22262b',    // Input fields, secondary surfaces
-    backgroundSelected: '#2d3239',   // Active/pressed states
-    backgroundSubtle: '#181b1f',     // Subtle section differentiation
+    // Backgrounds — obsidian canvas ascending through glass container tiers
+    background: '#10141a',           // surface — main canvas
+    backgroundCanvas: '#0a0e14',     // surface-container-lowest — deepest base
+    backgroundElevated: '#181c22',   // surface-container-low — cards, sheets
+    backgroundElement: '#1c2026',    // surface-container — interactive rows
+    backgroundSelected: '#262a31',   // surface-container-high — active/pressed
+    backgroundSubtle: '#181c22',     // subtle section differentiation
+    backgroundHighest: '#31353c',    // surface-container-highest — top tier
 
     // Text
-    text: '#f0f2f5',                 // Primary text (off-white, not pure white)
-    textSecondary: '#8b919a',        // Secondary/muted text
-    textTertiary: '#5c6370',         // Placeholder, disabled
+    text: '#dfe2eb',                 // on-surface — primary (off-white)
+    textSecondary: '#b9cacb',        // on-surface-variant — secondary/muted
+    textTertiary: '#849495',         // outline — placeholder, disabled
 
-    // Accent (Teal/Cyan - energetic, athletic)
-    accent: '#06b6d4',              // Primary brand accent
-    accentMuted: '#0e7490',         // Subtle accent backgrounds
-    accentSoft: 'rgba(6, 182, 212, 0.12)',  // Accent tint for backgrounds
+    // Accent (Electric cyan — luminous, athletic)
+    accent: '#00f2fe',              // primary-container — primary brand accent
+    accentText: '#002022',          // ink color for text/icons on accent fills
+    accentMuted: '#00696f',         // inverse-primary — subtle accent
+    accentSoft: 'rgba(0, 242, 254, 0.12)',  // accent tint background
+    accentGlow: 'rgba(0, 242, 254, 0.4)',   // glow/shadow color
 
     // Semantic colors
-    success: '#10b981',             // PRs, completed, positive
-    successSoft: 'rgba(16, 185, 129, 0.12)',
-    warning: '#f59e0b',             // Caution, pending
-    warningSoft: 'rgba(245, 158, 11, 0.12)',
-    error: '#ef4444',               // Errors, destructive actions
+    success: '#4edea3',             // secondary — completed, confirmed sets
+    successStrong: '#10b981',       // emerald — high-emphasis success
+    successSoft: 'rgba(16, 185, 129, 0.15)',
+    warning: '#f59e0b',             // amber — caution, deload
+    warningSoft: 'rgba(245, 158, 11, 0.14)',
+    error: '#ffb4ab',               // error — errors, destructive text
+    errorStrong: '#ef4444',
     errorSoft: 'rgba(239, 68, 68, 0.12)',
+    tertiary: '#89ceff',            // tertiary-fixed-dim — structural/recovery
 
-    // Borders
-    border: '#2d3239',              // Default card/input borders
-    borderSubtle: '#22262b',        // Very subtle separators
-    borderFocus: '#06b6d4',         // Focus rings
+    // Borders — hairline strokes for glass structure
+    border: 'rgba(255, 255, 255, 0.08)',      // default card/input border
+    borderStrong: 'rgba(255, 255, 255, 0.12)', // elevated inner border
+    borderSubtle: 'rgba(255, 255, 255, 0.05)', // very subtle separators
+    borderFocus: '#00f2fe',                    // focus rings
+    borderAccent: 'rgba(0, 242, 254, 0.6)',    // active/focused card border
 
     // Specific UI elements
-    tabBarBackground: '#0f1114',
-    tabBarBorder: '#1a1d21',
-    tabBarActive: '#06b6d4',
-    tabBarInactive: '#5c6370',
+    tabBarBackground: 'rgba(24, 28, 34, 0.9)',
+    tabBarBorder: 'rgba(255, 255, 255, 0.1)',
+    tabBarActive: '#00f2fe',
+    tabBarInactive: '#849495',
 
     // Chat
-    chatBubbleUser: '#06b6d4',
-    chatBubbleUserText: '#ffffff',
-    chatBubbleAssistant: '#1a1d21',
-    chatBubbleAssistantText: '#f0f2f5',
-    chatBubbleSystem: 'rgba(16, 185, 129, 0.12)',
-    chatBubbleSystemText: '#10b981',
+    chatBubbleUser: '#262a31',
+    chatBubbleUserText: '#dfe2eb',
+    chatBubbleAssistant: '#1c2026',
+    chatBubbleAssistantText: '#dfe2eb',
+    chatBubbleSystem: 'rgba(16, 185, 129, 0.15)',
+    chatBubbleSystemText: '#4edea3',
 
     // Timer
-    timerBackground: 'rgba(6, 182, 212, 0.08)',
-    timerBorder: 'rgba(6, 182, 212, 0.24)',
-    timerText: '#06b6d4',
+    timerBackground: 'rgba(0, 242, 254, 0.08)',
+    timerBorder: 'rgba(0, 242, 254, 0.24)',
+    timerText: '#00f2fe',
 
     // PR indicator
-    prBackground: 'rgba(245, 158, 11, 0.12)',
+    prBackground: 'rgba(245, 158, 11, 0.14)',
     prBorder: 'rgba(245, 158, 11, 0.3)',
     prText: '#f59e0b',
   },
@@ -75,10 +94,12 @@ export const Colors = {
   light: {
     // Backgrounds
     background: '#ffffff',
+    backgroundCanvas: '#f9fafb',
     backgroundElevated: '#ffffff',
     backgroundElement: '#f4f5f7',
     backgroundSelected: '#e8eaed',
     backgroundSubtle: '#f9fafb',
+    backgroundHighest: '#e2e4e8',
 
     // Text
     text: '#111318',
@@ -87,31 +108,38 @@ export const Colors = {
 
     // Accent
     accent: '#0891b2',
+    accentText: '#ffffff',
     accentMuted: '#06b6d4',
     accentSoft: 'rgba(8, 145, 178, 0.08)',
+    accentGlow: 'rgba(8, 145, 178, 0.25)',
 
     // Semantic colors
     success: '#059669',
+    successStrong: '#047857',
     successSoft: 'rgba(5, 150, 105, 0.08)',
     warning: '#d97706',
     warningSoft: 'rgba(217, 119, 6, 0.08)',
     error: '#dc2626',
+    errorStrong: '#dc2626',
     errorSoft: 'rgba(220, 38, 38, 0.08)',
+    tertiary: '#0284c7',
 
     // Borders
     border: '#e2e4e8',
+    borderStrong: '#d4d7dc',
     borderSubtle: '#f0f1f3',
     borderFocus: '#0891b2',
+    borderAccent: 'rgba(8, 145, 178, 0.6)',
 
     // Specific UI elements
-    tabBarBackground: '#ffffff',
+    tabBarBackground: 'rgba(255, 255, 255, 0.92)',
     tabBarBorder: '#e2e4e8',
     tabBarActive: '#0891b2',
     tabBarInactive: '#8b919a',
 
     // Chat
-    chatBubbleUser: '#0891b2',
-    chatBubbleUserText: '#ffffff',
+    chatBubbleUser: '#e8eaed',
+    chatBubbleUserText: '#111318',
     chatBubbleAssistant: '#f4f5f7',
     chatBubbleAssistantText: '#111318',
     chatBubbleSystem: 'rgba(5, 150, 105, 0.08)',
@@ -136,53 +164,66 @@ export type ThemeColor = keyof ThemeColors;
 // TYPOGRAPHY
 // ============================================================================
 
-export const Fonts = Platform.select({
-  ios: {
-    sans: 'System',
-    mono: 'Menlo',
-  },
-  android: {
-    sans: 'Roboto',
-    mono: 'monospace',
-  },
-  default: {
-    sans: 'System',
-    mono: 'monospace',
-  },
-  web: {
-    sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    mono: '"SF Mono", "Fira Code", "Fira Mono", Menlo, monospace',
-  },
+/** Plus Jakarta Sans family names registered via useFonts (see _layout.tsx). */
+export const FontFamily = {
+  regular: 'PlusJakartaSans_400Regular',
+  semibold: 'PlusJakartaSans_600SemiBold',
+  bold: 'PlusJakartaSans_700Bold',
+  extrabold: 'PlusJakartaSans_800ExtraBold',
+} as const;
+
+const systemMono = Platform.select({
+  ios: 'Menlo',
+  android: 'monospace',
+  web: '"SF Mono", "Fira Code", Menlo, monospace',
+  default: 'monospace',
 })!;
 
+export const Fonts = {
+  sans: FontFamily.regular,
+  semibold: FontFamily.semibold,
+  bold: FontFamily.bold,
+  extrabold: FontFamily.extrabold,
+  // Data/telemetry readouts use the extrabold Jakarta face for glanceability.
+  mono: FontFamily.extrabold,
+  systemMono,
+};
+
 /**
- * Type scale following iOS HIG and Material 3 conventions.
- * Uses system font weight scale (400-800).
+ * Type scale — Kinetic Obsidian (Plus Jakarta Sans).
+ * Values mirror the Stitch design tokens. Each entry carries its font family
+ * so weights render correctly with runtime-loaded fonts.
  */
 export const TypeScale = {
-  // Display - large impactful numbers (timer, PR values)
-  displayLarge: { fontSize: 48, lineHeight: 56, fontWeight: '700' as const },
-  displayMedium: { fontSize: 36, lineHeight: 44, fontWeight: '700' as const },
+  // Display — hero headers
+  displayLarge: { fontFamily: FontFamily.extrabold, fontSize: 48, lineHeight: 54, fontWeight: '800' as const, letterSpacing: -1.4 },
+  displayMedium: { fontFamily: FontFamily.bold, fontSize: 36, lineHeight: 44, fontWeight: '700' as const, letterSpacing: -0.7 },
 
-  // Headlines - screen titles, section headers
-  headlineLarge: { fontSize: 28, lineHeight: 36, fontWeight: '700' as const },
-  headlineMedium: { fontSize: 22, lineHeight: 28, fontWeight: '600' as const },
-  headlineSmall: { fontSize: 18, lineHeight: 24, fontWeight: '600' as const },
+  // Headlines — screen titles, section headers
+  headlineLarge: { fontFamily: FontFamily.bold, fontSize: 32, lineHeight: 40, fontWeight: '700' as const, letterSpacing: -0.6 },
+  headlineMedium: { fontFamily: FontFamily.bold, fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.3 },
+  headlineSmall: { fontFamily: FontFamily.semibold, fontSize: 18, lineHeight: 24, fontWeight: '600' as const },
 
-  // Body - main content
-  bodyLarge: { fontSize: 16, lineHeight: 24, fontWeight: '400' as const },
-  bodyMedium: { fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
-  bodySmall: { fontSize: 12, lineHeight: 16, fontWeight: '400' as const },
+  // Titles
+  titleMedium: { fontFamily: FontFamily.semibold, fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
 
-  // Labels - buttons, badges, compact UI
-  labelLarge: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
-  labelMedium: { fontSize: 12, lineHeight: 16, fontWeight: '600' as const },
-  labelSmall: { fontSize: 11, lineHeight: 14, fontWeight: '500' as const },
+  // Body — main content
+  bodyLarge: { fontFamily: FontFamily.regular, fontSize: 16, lineHeight: 24, fontWeight: '400' as const },
+  bodyMedium: { fontFamily: FontFamily.regular, fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
+  bodySmall: { fontFamily: FontFamily.regular, fontSize: 12, lineHeight: 16, fontWeight: '400' as const },
 
-  // Mono - data values, timers, stats
-  monoLarge: { fontSize: 32, lineHeight: 40, fontWeight: '700' as const },
-  monoMedium: { fontSize: 20, lineHeight: 28, fontWeight: '600' as const },
-  monoSmall: { fontSize: 14, lineHeight: 20, fontWeight: '500' as const },
+  // Labels — buttons, badges, compact UI
+  labelLarge: { fontFamily: FontFamily.semibold, fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
+  labelMedium: { fontFamily: FontFamily.semibold, fontSize: 12, lineHeight: 16, fontWeight: '600' as const },
+  labelSmall: { fontFamily: FontFamily.semibold, fontSize: 12, lineHeight: 16, fontWeight: '600' as const },
+  /** Uppercase overline: "ACCOUNT", "AI PLAN", "SESSION" */
+  labelCaps: { fontFamily: FontFamily.bold, fontSize: 11, lineHeight: 14, fontWeight: '700' as const, letterSpacing: 0.88, textTransform: 'uppercase' as const },
+
+  // Data / telemetry — large numeric readouts
+  dataMetric: { fontFamily: FontFamily.extrabold, fontSize: 28, lineHeight: 32, fontWeight: '800' as const, letterSpacing: -0.56 },
+  monoLarge: { fontFamily: FontFamily.extrabold, fontSize: 32, lineHeight: 40, fontWeight: '800' as const, letterSpacing: -0.6 },
+  monoMedium: { fontFamily: FontFamily.bold, fontSize: 20, lineHeight: 28, fontWeight: '700' as const },
+  monoSmall: { fontFamily: FontFamily.semibold, fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
 } as const;
 
 // ============================================================================
@@ -222,41 +263,67 @@ export const Spacing = {
 // ============================================================================
 
 /**
- * Consistent radius scale. One system, no mixing.
- * Cards: large. Buttons/inputs: medium. Badges: full.
+ * Kinetic Obsidian roundedness — sleek athletic hardware aesthetic.
+ * Cards: large/xl. Inputs & rows: medium. Badges/pills: full.
  */
 export const Radii = {
-  /** 6px - subtle rounding (inputs, small elements) */
-  small: 6,
-  /** 10px - buttons, input fields */
-  medium: 10,
-  /** 14px - cards, sheets */
-  large: 14,
-  /** 20px - large cards, modals */
-  xl: 20,
-  /** 9999px - pills, badges, avatars */
+  /** 4px - subtle rounding */
+  small: 4,
+  /** 8px - buttons, input fields, list rows */
+  medium: 8,
+  /** 12px - cards */
+  large: 12,
+  /** 16px - large cards, hero modules */
+  xl: 16,
+  /** 24px - large hero modules */
+  xxl: 24,
+  /** 9999px - pills, badges, avatars, floating dock */
   full: 9999,
 } as const;
 
 // ============================================================================
-// SHADOWS (dark mode: minimal; light mode: soft)
+// SHADOWS & GLOW (dark mode: luminous glow; light mode: soft)
 // ============================================================================
 
 export const Shadows = {
   dark: {
     small: {
       shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.3,
-      shadowRadius: 2,
-      elevation: 2,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 6,
+      elevation: 3,
     },
     medium: {
       shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.45,
+      shadowRadius: 16,
+      elevation: 8,
+    },
+    /** Elevated floating dock */
+    dock: {
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 20 },
+      shadowOpacity: 0.6,
+      shadowRadius: 40,
+      elevation: 16,
+    },
+    /** Luminous cyan glow for active/primary elements */
+    glow: {
+      shadowColor: '#00f2fe',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.45,
+      shadowRadius: 16,
+      elevation: 6,
+    },
+    /** Softer cyan glow for CTA buttons */
+    glowSoft: {
+      shadowColor: '#00f2fe',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.25,
-      shadowRadius: 8,
-      elevation: 4,
+      shadowOpacity: 0.35,
+      shadowRadius: 16,
+      elevation: 5,
     },
   },
   light: {
@@ -273,6 +340,27 @@ export const Shadows = {
       shadowOpacity: 0.08,
       shadowRadius: 12,
       elevation: 4,
+    },
+    dock: {
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.12,
+      shadowRadius: 24,
+      elevation: 8,
+    },
+    glow: {
+      shadowColor: '#0891b2',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    glowSoft: {
+      shadowColor: '#0891b2',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.18,
+      shadowRadius: 10,
+      elevation: 3,
     },
   },
 } as const;
@@ -296,3 +384,9 @@ export const TouchTarget = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 600;
+
+/**
+ * Bottom padding a scroll view should reserve so its content clears the
+ * floating tab dock (dock height + margin). Add safe-area inset on top of this.
+ */
+export const TabBarClearance = 96;

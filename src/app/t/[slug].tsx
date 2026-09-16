@@ -173,9 +173,9 @@ export default function DeepLinkTemplateScreen() {
           accessibilityLabel="Clone this template to your program library"
         >
           {isCloning ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={theme.accentText} size="small" />
           ) : (
-            <ThemedText style={styles.cloneButtonText}>
+            <ThemedText style={[styles.cloneButtonText, { color: theme.accentText }]}>
               {session ? 'Clone to My Library' : 'Sign in to Clone'}
             </ThemedText>
           )}

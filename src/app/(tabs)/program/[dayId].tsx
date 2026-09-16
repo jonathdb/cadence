@@ -173,7 +173,7 @@ export default function ProgramDayDetailScreen() {
           >
             <View style={styles.exerciseHeader}>
               <View style={[styles.orderBadge, { backgroundColor: theme.accent }]}>
-                <ThemedText style={styles.orderText}>{index + 1}</ThemedText>
+                <ThemedText style={[styles.orderText, { color: theme.accentText }]}>{index + 1}</ThemedText>
               </View>
               <View style={styles.exerciseInfo}>
                 <ThemedText style={{ fontWeight: '700', fontSize: 15, color: theme.text }}>
@@ -234,7 +234,7 @@ export default function ProgramDayDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel={`Start session for Day ${day.day_number}`}
         >
-          <ThemedText style={styles.startButtonText}>Start Session</ThemedText>
+          <ThemedText style={[styles.startButtonText, { color: theme.accentText }]}>Start Session</ThemedText>
         </Pressable>
       </ScrollView>
     </ThemedView>

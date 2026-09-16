@@ -9,7 +9,27 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
+import { buildProfileSummary } from '../_shared/profile-summary.ts';
 import { toAnthropicTools, toolDefinitions } from '../_shared/tool-definitions.ts';
+
+/**
+ * Fetch the user's training profile and build a compact summary for the system
+ * prompt. Returns '' when there is no profile or on any error (non-fatal).
+ */
+async function getProfileSummary(userId: string): Promise<string> {
+  try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('goal, experience_level, bodyweight, bodyweight_unit, injuries, equipment, preferred_training_days, weekly_frequency, training_notes')
+      .eq('user_id', userId)
+      .maybeSingle();
+    return buildProfileSummary(data ?? null);
+  } catch (err) {
+    console.error('getProfileSummary error:', err instanceof Error ? err.message : err);
+    return '';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,27 +135,32 @@ async function getUserApiKey(
 
 /**
  * Build the system prompt for the Cadence training agent.
+ * When a non-empty profileSummary is provided it is appended so the agent can
+ * personalize its responses to the user's goal, experience, injuries, and equipment.
  */
-function getSystemPrompt(): string {
-  return `You are Cadence, an AI fitness training agent. You help users create and refine personalized training programs, log workouts, track progression, and manage Spotify playlists for their sessions.
+function getSystemPrompt(profileSummary = ''): string {
+  const base = `You are Cadence, an AI fitness training agent. You help users create and refine personalized training programs, log workouts, track progression, and manage Spotify playlists for their sessions.
 
 Your capabilities (via tool calls):
-- Create and modify training programs
-- Activate programs
+- Create, modify, and activate goal-aligned training programs
+- Critique the active program (critique_program) for balance, volume, frequency, and goal fit
 - Draft journal entries for completed sessions
-- Retrieve recovery summaries (sleep, HRV, resting HR)
-- Retrieve recent workout summaries
-- Retrieve the active training program structure
-- Retrieve session history and detailed session data
-- List all user programs with summary info
-- Search, create, and modify Spotify playlists
-- Suggest pace-matched playlists for running, cycling, and walking sessions (works with or without route history)
-- Suggest progression adjustments (weight increases, deloads, volume changes) based on session history and recovery data
+- Retrieve recovery summaries averaged over a window, with an HRV baseline (get_recovery_summary)
+- Retrieve strength analytics: volume trend, per-muscle-group balance, and adherence (get_training_analytics)
+- Retrieve per-exercise personal-record timelines (get_pr_history)
+- Retrieve cardio analytics: pace/speed trend, distance buckets, and weekly load (get_cardio_analytics)
+- Retrieve the active program structure, all programs, session history, and detailed session data
+- Retrieve GPS route history and recent imported workouts
+- Generate unified, profile-aware progression suggestions across strength AND cardio (suggest_progression)
+- Search, create, and modify Spotify playlists; suggest pace-matched workout playlists
+
+When the user asks about progress, trends, PRs, volume, muscle balance, or consistency, call the relevant analytics tool (get_training_analytics / get_pr_history / get_cardio_analytics) BEFORE answering — do not guess from memory. Prefer analytics tools over raw session dumps for trend questions.
 
 Guidelines:
 - Be concise and actionable in your responses
-- When proposing a program, always use the program_create tool so the user can review the structured output
-- When modifying a program, use program_modify with clear reasoning
+- When proposing a program, always use the program_create tool so the user can review the structured output. Build goal-aligned plans: choose a weekly split and session structure that fit the user's goal (e.g., hypertrophy → moderate reps and higher per-muscle volume; strength → lower reps, compound focus; endurance → more cardio/higher-rep circuits), scale complexity and volume to their experience level, honor their target weekly frequency and preferred training days, and ONLY select exercises the user can perform with their available equipment (bodyweight is always allowed). Apply light periodization: give each day a clear intent and avoid overloading one muscle group across consecutive days.
+- When modifying a program, use program_modify with clear reasoning.
+- When the user asks to review/critique their program ("is my program good?", "review my plan", "what's missing?"), call critique_program. Present its findings grouped by severity, lead with warnings, and offer to apply any proposed_change via program_modify — always requesting explicit confirmation first.
 - Ask clarifying questions if the user's request is ambiguous
 - Reference the user's history and recovery data when making recommendations
 - Before suggesting program modifications, exercises, or playlists, call get_active_program to understand the user's current training structure.
@@ -155,9 +180,11 @@ Guidelines:
 - When extracting music preferences from conversation, apply at most 5 total seeds (combined genres + artists + tracks). If the user mentions more than 5 preferences, select the 5 most recently mentioned and inform the user that Spotify allows a maximum of 5 seed values at a time.
 - If the user contradicts a previous music preference (e.g., "actually, not hip-hop, make it rock"), use the most recent preference and discard the contradicted one.
 - After creating a playlist via spotify_create_playlist, always include the external_url from the tool result in your response so the user can open it directly in Spotify.
-- When the user asks about progression, next steps, "what should I change?", or how to adjust their training, first call get_session_details for recent sessions, get_recovery_summary, and get_active_program to gather context. Then call suggest_progression with the assembled data. Present the suggestions conversationally with reasoning, and always request explicit user confirmation before calling program_modify to apply any changes.
-- When presenting suggest_progression results, format each suggestion clearly: exercise name, what's recommended (e.g., "increase bench press from 80kg to 82.5kg"), the reasoning, and confidence level. Group suggestions by type if multiple exercises are affected.
+- When the user asks about progression, next steps, "what should I change?", or how to adjust their training, just call suggest_progression. The server assembles all inputs itself (exercise history, program targets, recovery, cardio analytics, and profile) — you do NOT need to gather or pass that data. Present the returned suggestions conversationally with reasoning, and always request explicit user confirmation before calling program_modify to apply any changes.
+- suggest_progression returns strength_suggestions (per exercise, with current vs suggested weight/sets and confidence), cardio_suggestions, a recovery_state, and guardrail_notes. When recovery_state is "compromised", lead with that and favor lighter work/rest. Always surface guardrail_notes (e.g. injury holds) to the user. Format each strength suggestion clearly: exercise, what's recommended (e.g., "increase bench press from 80kg to 82.5kg"), the reasoning, and confidence.
 - Never expose or reference API keys, internal systems, or technical implementation details to the user`;
+
+  return composeSystemPrompt(base, profileSummary);
 }
 
 /**
@@ -167,9 +194,10 @@ async function callOpenAI(
   apiKey: string,
   messages: ChatMessage[],
   signal: AbortSignal,
-  model: string = 'gpt-4o'
+  model: string = 'gpt-4o',
+  systemPrompt: string = getSystemPrompt()
 ): Promise<Response> {
-  const systemMessage: ChatMessage = { role: 'system', content: getSystemPrompt() };
+  const systemMessage: ChatMessage = { role: 'system', content: systemPrompt };
   const allMessages = [systemMessage, ...messages];
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -197,7 +225,8 @@ async function callAnthropic(
   apiKey: string,
   messages: ChatMessage[],
   signal: AbortSignal,
-  model: string = 'claude-haiku-4-5-20251001'
+  model: string = 'claude-haiku-4-5-20251001',
+  systemPrompt: string = getSystemPrompt()
 ): Promise<Response> {
   // Anthropic uses a separate system param and different message format.
   // Key differences from OpenAI:
@@ -269,7 +298,7 @@ async function callAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: 4096,
-      system: getSystemPrompt(),
+      system: systemPrompt,
       messages: anthropicMessages,
       tools: toAnthropicTools(toolDefinitions),
       stream: true,
@@ -565,6 +594,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
+  // Build a personalized system prompt from the user's training profile.
+  const profileSummary = await getProfileSummary(userId);
+  const systemPrompt = getSystemPrompt(profileSummary);
+
   // Call the AI provider with a 30s timeout
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -573,9 +606,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let upstreamResponse: Response;
 
     if (effectiveProvider === 'openai') {
-      upstreamResponse = await callOpenAI(tierResolution.apiKey, messages, controller.signal, model);
+      upstreamResponse = await callOpenAI(tierResolution.apiKey, messages, controller.signal, model, systemPrompt);
     } else {
-      upstreamResponse = await callAnthropic(tierResolution.apiKey, messages, controller.signal, model);
+      upstreamResponse = await callAnthropic(tierResolution.apiKey, messages, controller.signal, model, systemPrompt);
     }
 
     clearTimeout(timeout);

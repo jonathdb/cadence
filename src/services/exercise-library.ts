@@ -28,6 +28,8 @@ export interface CreateExerciseInput {
   secondary_muscle_groups?: string[];
   instructions?: string;
   notes?: string;
+  /** Equipment required (e.g. 'barbell', 'dumbbells', 'bodyweight'). Optional. */
+  equipment?: string;
 }
 
 export class ExerciseLibraryError extends Error {
@@ -122,6 +124,7 @@ export async function createExercise(
       secondary_muscle_groups: input.secondary_muscle_groups ?? [],
       instructions: input.instructions ?? '',
       notes: input.notes ?? '',
+      equipment: input.equipment?.trim() || null,
       is_global: false,
     })
     .select()

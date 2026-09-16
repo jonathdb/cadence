@@ -27,6 +27,7 @@ import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { MAX_EXERCISES_PER_SESSION } from '@/lib/validation';
 import * as haptics from '@/services/haptics';
+import { triggerSessionInsight } from '@/services/session-insight';
 import { useCadenceStore, type Exercise } from '@/store/index';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -260,6 +261,8 @@ export default function FreestyleSessionScreen() {
     if (!sessionId) return;
     const completeSession = useCadenceStore.getState().completeSession;
     completeSession(sessionId);
+    // Fire-and-forget proactive coach insight (approval-gated; never blocks navigation).
+    void triggerSessionInsight(sessionId);
     router.back();
   }, [sessionId, router]);
 
@@ -413,7 +416,7 @@ function ExerciseCard({
       {/* Exercise Header */}
       <View style={styles.exerciseHeader}>
         <View style={[styles.orderBadge, { backgroundColor: theme.accent }]}>
-          <ThemedText style={styles.orderText}>{index + 1}</ThemedText>
+          <ThemedText style={[styles.orderText, { color: theme.accentText }]}>{index + 1}</ThemedText>
         </View>
         <View style={styles.exerciseInfo}>
           <ThemedText style={[styles.exerciseName, { color: theme.text }]}>
@@ -568,7 +571,7 @@ function ExerciseCard({
             accessibilityRole="button"
             accessibilityLabel={`Log set for ${entry.name}`}
           >
-            <ThemedText style={styles.logSetButtonText}>
+            <ThemedText style={[styles.logSetButtonText, { color: theme.accentText }]}>
               + Log Set {entry.loggedSetsCount + 1}
             </ThemedText>
           </Pressable>

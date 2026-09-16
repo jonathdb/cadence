@@ -125,9 +125,9 @@ export default function RegisterScreen() {
               accessibilityState={{ disabled: isLoading }}
             >
               {isLoading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.accentText} />
               ) : (
-                <ThemedText style={styles.buttonText}>Sign Up</ThemedText>
+                <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>Sign Up</ThemedText>
               )}
             </Pressable>
 

@@ -11,6 +11,7 @@
  *
  * Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9
  */
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -399,7 +400,7 @@ export default function ExerciseLibraryScreen() {
               accessibilityRole="button"
               accessibilityLabel="Create custom exercise"
             >
-              <ThemedText style={styles.createButtonText}>
+              <ThemedText style={[styles.createButtonText, { color: theme.accentText }]}>
                 Create Custom Exercise
               </ThemedText>
             </Pressable>
@@ -417,7 +418,7 @@ export default function ExerciseLibraryScreen() {
         accessibilityRole="button"
         accessibilityLabel="Create new custom exercise"
       >
-        <ThemedText style={styles.fabText}>+</ThemedText>
+        <ThemedText style={[styles.fabText, { color: theme.accentText }]}>+</ThemedText>
       </Pressable>
 
       {/* Loading Overlay */}
@@ -844,7 +845,7 @@ function ExerciseFormModal({
               accessibilityRole="button"
               accessibilityLabel={`Save exercise`}
             >
-              <ThemedText style={styles.submitButtonText}>Save Exercise</ThemedText>
+              <ThemedText style={[styles.submitButtonText, { color: theme.accentText }]}>Save Exercise</ThemedText>
             </Pressable>
           </ScrollView>
         </View>

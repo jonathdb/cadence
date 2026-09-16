@@ -701,9 +701,9 @@ export default function ProgramEditScreen() {
             accessibilityLabel={isNewProgram ? 'Create program' : 'Save changes'}
           >
             {isSaving ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={theme.accentText} />
             ) : (
-              <ThemedText style={styles.saveButtonText}>
+              <ThemedText style={[styles.saveButtonText, { color: theme.accentText }]}>
                 {isNewProgram ? 'Create Program' : 'Save Changes'}
               </ThemedText>
             )}
@@ -805,7 +805,7 @@ function DayCard({
         accessibilityLabel={`${day.expanded ? 'Collapse' : 'Expand'} Day ${dayIndex + 1}`}
       >
         <View style={[styles.dayBadge, { backgroundColor: theme.accent }]}>
-          <ThemedText style={styles.dayBadgeText}>{dayIndex + 1}</ThemedText>
+          <ThemedText style={[styles.dayBadgeText, { color: theme.accentText }]}>{dayIndex + 1}</ThemedText>
         </View>
         <TextInput
           style={[styles.dayNameInput, { color: theme.text }]}

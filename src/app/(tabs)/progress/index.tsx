@@ -8,16 +8,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
-    Pressable,
     ScrollView,
     StyleSheet,
-    View,
+    View
 } from 'react-native';
+
+
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChartTableToggle } from '@/components/charts/ChartTableToggle';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radii, Spacing } from '@/constants/theme';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { Icon } from '@/components/ui/Icon';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { Spacing, TabBarClearance } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { calculateVolumeByMuscleGroup } from '@/services/volume-calculator';
 import type { Exercise } from '@/types/exercise';
@@ -116,6 +121,7 @@ export default function ProgressScreen() {
   const [showVolumeTable, setShowVolumeTable] = useState(false);
   const [showFrequencyTable, setShowFrequencyTable] = useState(false);
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   const fetchData = useCallback(async (window: TimeWindow) => {
     try {
@@ -289,50 +295,36 @@ export default function ProgressScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <ThemedText type="headlineMedium">Progress</ThemedText>
-
-        {/* Time window selector — Requirement 13.2 */}
-        <View
-          style={styles.timeRow}
-          accessibilityRole="radiogroup"
-          accessibilityLabel="Time window selector"
-        >
-          {(['1w', '4w', '12w'] as TimeWindow[]).map((w) => (
-            <Pressable
-              key={w}
-              style={[
-                styles.timeButton,
-                { backgroundColor: timeWindow === w ? theme.accent : theme.backgroundElement },
-              ]}
-              onPress={() => setTimeWindow(w)}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: timeWindow === w }}
-              accessibilityLabel={getTimeWindowLabel(w)}
-            >
-              <ThemedText
-                style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  color: timeWindow === w ? '#fff' : theme.text,
-                }}
-              >
-                {getTimeWindowLabel(w)}
-              </ThemedText>
-            </Pressable>
-          ))}
-        </View>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: TabBarClearance + insets.bottom },
+        ]}
+      >
+        {/* Timeframe selector — Requirement 13.2 */}
+        <SegmentedControl<TimeWindow>
+          options={[
+            { value: '1w', label: getTimeWindowLabel('1w') },
+            { value: '4w', label: getTimeWindowLabel('4w') },
+            { value: '12w', label: getTimeWindowLabel('12w') },
+          ]}
+          value={timeWindow}
+          onChange={setTimeWindow}
+        />
 
         {/* Volume by muscle group chart — Requirement 13.1 */}
-        <View
-          style={[styles.chartCard, { backgroundColor: theme.backgroundElevated }]}
+        <GlassCard
+          elevation="low"
+          radius="xl"
+          style={styles.chartCard}
           accessible={true}
           accessibilityLabel={muscleGroupSummary}
           accessibilityRole="image"
         >
-          <ThemedText type="headlineSmall" style={styles.chartTitle}>
-            Volume by Muscle Group
-          </ThemedText>
+          <View style={styles.chartTitleRow}>
+            <Icon name="progress" size={18} color={theme.accent} />
+            <ThemedText type="headlineSmall">Volume by Muscle Group</ThemedText>
+          </View>
           {volumeByMuscleGroup && volumeByMuscleGroup.muscle_groups.length > 0 ? (
             <BarChart
               data={volumeByMuscleGroup.muscle_groups.map((mg) => ({
@@ -367,18 +359,21 @@ export default function ProgressScreen() {
                 : []
             }
           />
-        </View>
+        </GlassCard>
 
         {/* Weekly volume trend — Requirement 13.3 */}
-        <View
-          style={[styles.chartCard, { backgroundColor: theme.backgroundElevated }]}
+        <GlassCard
+          elevation="low"
+          radius="xl"
+          style={styles.chartCard}
           accessible={true}
           accessibilityLabel={volumeTrendSummary}
           accessibilityRole="image"
         >
-          <ThemedText type="headlineSmall" style={styles.chartTitle}>
-            Weekly Volume
-          </ThemedText>
+          <View style={styles.chartTitleRow}>
+            <Icon name="insights" size={18} color={theme.accent} />
+            <ThemedText type="headlineSmall">Weekly Volume</ThemedText>
+          </View>
           {weeklyVolume.some((w) => w.volume > 0) ? (
             <LineChart
               data={weeklyVolume.map((w) => ({
@@ -412,18 +407,21 @@ export default function ProgressScreen() {
               }))
             }
           />
-        </View>
+        </GlassCard>
 
         {/* Training frequency trend — Requirement 13.4 */}
-        <View
-          style={[styles.chartCard, { backgroundColor: theme.backgroundElevated }]}
+        <GlassCard
+          elevation="low"
+          radius="xl"
+          style={styles.chartCard}
           accessible={true}
           accessibilityLabel={frequencyTrendSummary}
           accessibilityRole="image"
         >
-          <ThemedText type="headlineSmall" style={styles.chartTitle}>
-            Training Frequency
-          </ThemedText>
+          <View style={styles.chartTitleRow}>
+            <Icon name="calendar" size={18} color={theme.success} />
+            <ThemedText type="headlineSmall">Training Frequency</ThemedText>
+          </View>
           {weeklyFrequency.some((w) => w.sessions > 0) ? (
             <LineChart
               data={weeklyFrequency.map((w) => ({
@@ -457,7 +455,7 @@ export default function ProgressScreen() {
               }))
             }
           />
-        </View>
+        </GlassCard>
       </ScrollView>
     </ThemedView>
   );
@@ -468,22 +466,15 @@ export default function ProgressScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: Spacing.four, gap: Spacing.four, paddingBottom: Spacing.seven },
-  timeRow: { flexDirection: 'row', gap: Spacing.two },
-  timeButton: {
-    flex: 1,
-    paddingVertical: Spacing.two,
-    borderRadius: Radii.medium,
-    alignItems: 'center',
-    minHeight: 48,
-    justifyContent: 'center',
-  },
+  scrollContent: { padding: Spacing.three, gap: Spacing.three },
   chartCard: {
-    borderRadius: Radii.large,
     padding: Spacing.three,
     gap: Spacing.two,
   },
-  chartTitle: {
+  chartTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
     marginBottom: Spacing.one,
   },
   chartSummary: {

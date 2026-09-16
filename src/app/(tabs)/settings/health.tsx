@@ -168,9 +168,9 @@ export default function HealthScreen() {
             accessibilityLabel="Request health data permissions"
           >
             {isRequesting ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={theme.accentText} size="small" />
             ) : (
-              <ThemedText style={styles.buttonText}>
+              <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>
                 {permissions?.workouts === 'granted' ? 'Re-request Permissions' : 'Connect Health Provider'}
               </ThemedText>
             )}
@@ -189,9 +189,9 @@ export default function HealthScreen() {
               accessibilityLabel="Trigger manual health data sync"
             >
               {isSyncing ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={theme.accentText} size="small" />
               ) : (
-                <ThemedText style={styles.buttonText}>Sync Now</ThemedText>
+                <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>Sync Now</ThemedText>
               )}
             </Pressable>
 

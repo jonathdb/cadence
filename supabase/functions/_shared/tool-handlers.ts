@@ -7,6 +7,30 @@
  */
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type {
+    AnalyticsSet,
+    CardioActivityType,
+    CardioEffort,
+    MuscleGroup,
+} from './analytics-engine.ts';
+import {
+    computeAdherence,
+    computeCardioLoad,
+    computeCardioTrend,
+    computeDistanceBuckets,
+    computeExercisePRHistory,
+    computeMuscleBalance,
+    computeVolumeTrend,
+    critiqueProgram,
+} from './analytics-engine.ts';
+import type {
+    CardioProgressionInput,
+    ExerciseHistory as EngineExerciseHistory,
+    ProgramTarget as EngineProgramTarget,
+    ProfileForProgression,
+    RecoveryV2,
+} from './progression-engine.ts';
+import { evaluateProgressionV2 } from './progression-engine.ts';
 import { getSpotifyAccessToken, spotifyApiRequest } from './spotify-client.ts';
 
 // --- BPM Range for pace-based playlist suggestions ---
@@ -264,6 +288,277 @@ export type ToolHandler = (
   userId: string,
   args: Record<string, unknown>
 ) => Promise<unknown>;
+
+// --- Analytics helpers (Task 3) ---
+
+/** ISO timestamp for `days` ago from now. */
+function daysAgoIso(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
+
+/**
+ * Resolve a batch of exercise ids to their primary muscle group, mapped into the
+ * analytics-engine 9-group model. Unknown/unmappable groups resolve to null.
+ */
+async function resolveMuscleGroups(
+  supabase: SupabaseClient,
+  exerciseIds: string[]
+): Promise<Map<string, MuscleGroup | null>> {
+  const result = new Map<string, MuscleGroup | null>();
+  if (exerciseIds.length === 0) return result;
+
+  const { data } = await supabase
+    .from('exercises')
+    .select('id, primary_muscle_group')
+    .in('id', exerciseIds);
+
+  for (const row of (data ?? []) as { id: string; primary_muscle_group: string }[]) {
+    result.set(row.id, normalizeMuscleGroup(row.primary_muscle_group));
+  }
+  return result;
+}
+
+const VALID_MUSCLE_GROUPS = new Set<MuscleGroup>([
+  'chest', 'back', 'shoulders', 'biceps', 'triceps',
+  'quads', 'hamstrings', 'glutes', 'calves',
+]);
+
+/** Map a free-text muscle group to the 9-group model (best-effort), else null. */
+function normalizeMuscleGroup(raw: string | null | undefined): MuscleGroup | null {
+  if (!raw) return null;
+  const g = raw.trim().toLowerCase();
+  if (VALID_MUSCLE_GROUPS.has(g as MuscleGroup)) return g as MuscleGroup;
+  // Common synonyms / aliases
+  const aliases: Record<string, MuscleGroup> = {
+    quadriceps: 'quads',
+    quad: 'quads',
+    hamstring: 'hamstrings',
+    glute: 'glutes',
+    calf: 'calves',
+    delts: 'shoulders',
+    deltoids: 'shoulders',
+    lats: 'back',
+    pecs: 'chest',
+    bicep: 'biceps',
+    tricep: 'triceps',
+  };
+  return aliases[g] ?? null;
+}
+
+/** Map an imported workout_type string to a cardio activity type. */
+function mapWorkoutTypeToActivity(workoutType: string | null | undefined): CardioActivityType {
+  const t = (workoutType ?? '').toLowerCase();
+  if (t.includes('run') || t.includes('jog')) return 'running';
+  if (t.includes('cycl') || t.includes('bike') || t.includes('ride')) return 'cycling';
+  if (t.includes('walk') || t.includes('hik')) return 'walking';
+  return 'other';
+}
+
+/**
+ * Backfill the personal_records table with the latest computed PR per exercise when
+ * it is not already persisted. Non-fatal: logs and continues on error. The table
+ * exists in the schema but was previously never written to.
+ */
+async function backfillPersonalRecords(
+  supabase: SupabaseClient,
+  userId: string,
+  setsByExercise: Map<string, AnalyticsSet[]>,
+  nameById: Map<string, string>
+): Promise<void> {
+  try {
+    for (const [exerciseId, exSets] of setsByExercise.entries()) {
+      const history = computeExercisePRHistory(nameById.get(exerciseId) ?? 'Unknown', exSets);
+      const latest = history.records[history.records.length - 1];
+      if (!latest) continue;
+
+      // Skip if an equal-or-better record of the same type already exists.
+      const { data: existing } = await supabase
+        .from('personal_records')
+        .select('id, value')
+        .eq('user_id', userId)
+        .eq('exercise_id', exerciseId)
+        .eq('pr_type', latest.pr_type)
+        .order('value', { ascending: false })
+        .limit(1);
+
+      const bestExisting = (existing ?? [])[0] as { value: number } | undefined;
+      if (bestExisting && bestExisting.value >= latest.value) continue;
+
+      await supabase.from('personal_records').insert({
+        user_id: userId,
+        exercise_id: exerciseId,
+        pr_type: latest.pr_type,
+        value: latest.value,
+        achieved_at: latest.achieved_at,
+      });
+    }
+  } catch (err) {
+    console.error('[get_pr_history] personal_records backfill failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Assemble program targets for the user's active program in the engine's shape,
+ * plus a name→muscle-group map used to tag exercise history.
+ */
+async function assembleProgramTargets(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{
+  programTargets: EngineProgramTarget[];
+  exerciseNameToMuscle: Map<string, MuscleGroup>;
+  exerciseNameToEquipment: Map<string, string | null>;
+}> {
+  const programTargets: EngineProgramTarget[] = [];
+  const exerciseNameToMuscle = new Map<string, MuscleGroup>();
+  const exerciseNameToEquipment = new Map<string, string | null>();
+
+  const { data: program } = await supabase
+    .from('programs')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!program) return { programTargets, exerciseNameToMuscle, exerciseNameToEquipment };
+
+  const { data: days } = await supabase
+    .from('program_days')
+    .select('id')
+    .eq('program_id', program.id);
+
+  const dayIds = (days ?? []).map((d: { id: string }) => d.id);
+  if (dayIds.length === 0) return { programTargets, exerciseNameToMuscle, exerciseNameToEquipment };
+
+  const { data: items } = await supabase
+    .from('program_day_items')
+    .select('exercise_id, target_sets, target_reps, target_weight, target_rpe')
+    .in('program_day_id', dayIds)
+    .eq('type', 'exercise');
+
+  const itemRows = (items ?? []) as {
+    exercise_id: string | null;
+    target_sets: number;
+    target_reps: string;
+    target_weight: number | null;
+    target_rpe: number | null;
+  }[];
+
+  const exerciseIds = Array.from(new Set(itemRows.map((i) => i.exercise_id).filter((x): x is string => !!x)));
+  const { data: exercises } = await supabase
+    .from('exercises')
+    .select('id, name, primary_muscle_group, equipment')
+    .in('id', exerciseIds);
+
+  const exById = new Map(
+    ((exercises ?? []) as { id: string; name: string; primary_muscle_group: string; equipment: string | null }[]).map((e) => [e.id, e])
+  );
+
+  for (const item of itemRows) {
+    if (!item.exercise_id) continue;
+    const ex = exById.get(item.exercise_id);
+    if (!ex) continue;
+    const muscle = normalizeMuscleGroup(ex.primary_muscle_group);
+    if (muscle) exerciseNameToMuscle.set(ex.name, muscle);
+    exerciseNameToEquipment.set(ex.name, ex.equipment ?? null);
+    programTargets.push({
+      exercise_name: ex.name,
+      target_sets: item.target_sets,
+      target_rep_range: item.target_reps,
+      target_weight: item.target_weight ?? 0,
+      target_rpe: item.target_rpe,
+    });
+  }
+
+  return { programTargets, exerciseNameToMuscle, exerciseNameToEquipment };
+}
+
+/**
+ * Assemble recent per-exercise session history (most-recent-first) for the engine.
+ * Scans the user's most recent completed sessions and groups logged sets by exercise.
+ */
+async function assembleExerciseHistory(
+  supabase: SupabaseClient,
+  userId: string,
+  exerciseNameToMuscle: Map<string, MuscleGroup>,
+  sessionsToScan: number
+): Promise<EngineExerciseHistory[]> {
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, completed_at')
+    .eq('user_id', userId)
+    .eq('status', 'completed')
+    .order('completed_at', { ascending: false })
+    .limit(sessionsToScan);
+
+  const sessionRows = (sessions ?? []) as { id: string; completed_at: string }[];
+  if (sessionRows.length === 0) return [];
+
+  const sessionIds = sessionRows.map((s) => s.id);
+  const completedAtById = new Map(sessionRows.map((s) => [s.id, s.completed_at]));
+
+  const { data: sets } = await supabase
+    .from('logged_sets')
+    .select('session_id, exercise_id, reps, weight, rpe')
+    .in('session_id', sessionIds);
+
+  const setRows = (sets ?? []) as {
+    session_id: string;
+    exercise_id: string;
+    reps: number;
+    weight: number;
+    rpe: number | null;
+  }[];
+
+  // Resolve exercise names + muscle groups.
+  const exerciseIds = Array.from(new Set(setRows.map((s) => s.exercise_id)));
+  const { data: exercises } = await supabase
+    .from('exercises')
+    .select('id, name, primary_muscle_group')
+    .in('id', exerciseIds);
+  const exById = new Map(
+    ((exercises ?? []) as { id: string; name: string; primary_muscle_group: string }[]).map((e) => [e.id, e])
+  );
+
+  // Group: exercise → session → sets.
+  const byExercise = new Map<string, Map<string, { weight: number; reps: number; rpe: number | null }[]>>();
+  for (const s of setRows) {
+    const ex = exById.get(s.exercise_id);
+    if (!ex) continue;
+    const perSession = byExercise.get(ex.name) ?? new Map();
+    const arr = perSession.get(s.session_id) ?? [];
+    arr.push({ weight: s.weight, reps: s.reps, rpe: s.rpe });
+    perSession.set(s.session_id, arr);
+    byExercise.set(ex.name, perSession);
+  }
+
+  const history: EngineExerciseHistory[] = [];
+  for (const [exerciseName, perSession] of byExercise.entries()) {
+    const muscle = exerciseNameToMuscle.get(exerciseName)
+      ?? normalizeMuscleGroup(exById.get(
+        setRows.find((s) => exById.get(s.exercise_id)?.name === exerciseName)?.exercise_id ?? ''
+      )?.primary_muscle_group)
+      ?? 'chest'; // safe default for the engine's muscle-group typing
+
+    // Order sessions most-recent-first by completed_at.
+    const sessionEntries = Array.from(perSession.entries())
+      .sort((a, b) => {
+        const at = new Date(completedAtById.get(a[0]) ?? 0).getTime();
+        const bt = new Date(completedAtById.get(b[0]) ?? 0).getTime();
+        return bt - at;
+      })
+      .map(([sessionId, sessionSets]) => ({
+        session_date: completedAtById.get(sessionId) ?? new Date().toISOString(),
+        sets: sessionSets,
+      }));
+
+    history.push({ exercise_name: exerciseName, muscle_group: muscle, sessions: sessionEntries });
+  }
+
+  return history;
+}
 
 // --- Program Day Item interface for type safety ---
 interface ProgramDayItemInput {
@@ -1324,8 +1619,13 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
   },
 
   /**
-   * get_recovery_summary — Returns normalized health data summary (sleep, HRV, activity).
+   * get_recovery_summary — Returns a normalized recovery summary AVERAGED across the
+   * requested window (default 7 days), plus the latest reading and an HRV baseline.
    * Returns only normalized Cadence-owned summaries, never raw records.
+   *
+   * Previously this returned only the single most-recent record per category, which
+   * ignored the `days` window. It now averages across the window so the progression
+   * engine can compare the latest HRV against a baseline.
    * Validates: Requirement 15.2
    */
   get_recovery_summary: async (supabase, userId, args) => {
@@ -1334,60 +1634,80 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
     sinceDate.setDate(sinceDate.getDate() - days);
     const sinceDateStr = sinceDate.toISOString().split('T')[0];
 
-    // Query most recent sleep summary within the date range
-    const { data: sleepData } = await supabase
+    const avg = (nums: number[]): number | null =>
+      nums.length > 0 ? nums.reduce((s, n) => s + n, 0) / nums.length : null;
+
+    // Sleep — all records in the window (most-recent-first)
+    const { data: sleepRows } = await supabase
       .from('imported_sleep_summaries')
       .select('date, total_duration_minutes, deep_minutes, rem_minutes')
       .eq('user_id', userId)
       .gte('date', sinceDateStr)
-      .order('date', { ascending: false })
-      .limit(1)
-      .single();
+      .order('date', { ascending: false });
 
-    // Query most recent heart rate summary within the date range
-    const { data: hrData } = await supabase
+    // Heart rate — all records in the window
+    const { data: hrRows } = await supabase
       .from('imported_heart_rate_summaries')
-      .select('date, resting_bpm, average_bpm')
+      .select('date, resting_bpm, average_bpm, max_bpm')
       .eq('user_id', userId)
       .gte('date', sinceDateStr)
-      .order('date', { ascending: false })
-      .limit(1)
-      .single();
+      .order('date', { ascending: false });
 
-    // Query most recent activity snapshot within the date range
-    const { data: activityData } = await supabase
+    // Activity — all records in the window (HRV lives here)
+    const { data: activityRows } = await supabase
       .from('imported_activity_snapshots')
       .select('date, steps, hrv_ms, vo2_max')
       .eq('user_id', userId)
       .gte('date', sinceDateStr)
-      .order('date', { ascending: false })
-      .limit(1)
-      .single();
+      .order('date', { ascending: false });
+
+    const sleep = sleepRows ?? [];
+    const hr = hrRows ?? [];
+    const activity = activityRows ?? [];
+
+    const sleepMinutes = sleep
+      .map((r: { total_duration_minutes: number }) => r.total_duration_minutes)
+      .filter((n: number) => n != null);
+    const restingBpms = hr
+      .map((r: { resting_bpm: number | null }) => r.resting_bpm)
+      .filter((n: number | null): n is number => n != null);
+    const hrvValues = activity
+      .map((r: { hrv_ms: number | null }) => r.hrv_ms)
+      .filter((n: number | null): n is number => n != null);
+
+    const avgSleepMin = avg(sleepMinutes);
+    const latestSleep = sleep[0] ?? null;
+    const latestHr = hr[0] ?? null;
+    const latestActivity = activity[0] ?? null;
+    const latestHrv = hrvValues.length > 0 ? hrvValues[0] : null;
+    const hrvBaseline = avg(hrvValues);
 
     return {
-      sleep: sleepData
-        ? {
-            date: sleepData.date,
-            total_hours: +(sleepData.total_duration_minutes / 60).toFixed(1),
-            deep_minutes: sleepData.deep_minutes ?? null,
-            rem_minutes: sleepData.rem_minutes ?? null,
-          }
-        : null,
-      heart_rate: hrData
-        ? {
-            date: hrData.date,
-            resting_bpm: hrData.resting_bpm ?? null,
-            average_bpm: hrData.average_bpm ?? null,
-          }
-        : null,
-      activity: activityData
-        ? {
-            date: activityData.date,
-            steps: activityData.steps ?? null,
-            hrv_ms: activityData.hrv_ms ?? null,
-            vo2_max: activityData.vo2_max ?? null,
-          }
-        : null,
+      window_days: days,
+      sample_counts: { sleep: sleep.length, heart_rate: hr.length, activity: activity.length },
+      sleep: {
+        avg_total_hours: avgSleepMin != null ? +(avgSleepMin / 60).toFixed(1) : null,
+        latest_total_hours: latestSleep ? +(latestSleep.total_duration_minutes / 60).toFixed(1) : null,
+        latest_date: latestSleep?.date ?? null,
+        latest_deep_minutes: latestSleep?.deep_minutes ?? null,
+        latest_rem_minutes: latestSleep?.rem_minutes ?? null,
+      },
+      heart_rate: {
+        avg_resting_bpm: restingBpms.length > 0 ? +avg(restingBpms)!.toFixed(1) : null,
+        latest_resting_bpm: latestHr?.resting_bpm ?? null,
+        latest_average_bpm: latestHr?.average_bpm ?? null,
+        latest_max_bpm: latestHr?.max_bpm ?? null,
+        latest_date: latestHr?.date ?? null,
+      },
+      activity: {
+        latest_steps: latestActivity?.steps ?? null,
+        latest_vo2_max: latestActivity?.vo2_max ?? null,
+        latest_date: latestActivity?.date ?? null,
+      },
+      hrv: {
+        latest_ms: latestHrv,
+        baseline_ms: hrvBaseline != null ? +hrvBaseline.toFixed(1) : null,
+      },
     };
   },
 
@@ -1854,22 +2174,355 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
   },
 
   /**
-   * suggest_progression — Evaluates exercise history against progression rules
-   * and returns structured suggestions. Pure function delegation.
-   * Subject to the program_edits Permission_Category.
-   * Validates: Requirements 1.1, 11.2
+   * get_training_analytics — Strength analytics over a rolling window: volume trend,
+   * per-muscle-group balance, and consistency/adherence. Fetches completed sessions
+   * + logged sets in the window, resolves each exercise's primary muscle group, and
+   * delegates the math to the pure analytics-engine.
+   * Subject to the health_access Permission_Category.
    */
-  suggest_progression: async (_supabase, _userId, args) => {
-    const { evaluateProgression } = await import('./progression-engine.ts');
+  get_training_analytics: async (supabase, userId, args) => {
+    const weeks = Math.min(Math.max((args.weeks as number) ?? 8, 1), 52);
+    const plannedPerWeek = (args.planned_per_week as number) ?? 3;
+    const sinceIso = daysAgoIso(weeks * 7);
 
-    const input = {
-      exercise_history: args.exercise_history as any[],
-      recovery_summary: args.recovery_summary as any,
-      program_targets: args.program_targets as any[],
-      scope: (args.scope as string) ?? 'full_program',
+    // Completed sessions in the window
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('id, completed_at')
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .gte('completed_at', sinceIso)
+      .order('completed_at', { ascending: false });
+
+    const sessionRows = (sessions ?? []) as { id: string; completed_at: string }[];
+    if (sessionRows.length === 0) {
+      return {
+        window_weeks: weeks,
+        volume_trend: computeVolumeTrend([]),
+        muscle_balance: computeMuscleBalance([]),
+        adherence: computeAdherence({ completed_session_dates: [], planned_per_week: plannedPerWeek, weeks }),
+      };
+    }
+
+    const sessionIds = sessionRows.map((s) => s.id);
+    const completedAtById = new Map(sessionRows.map((s) => [s.id, s.completed_at]));
+
+    // Logged sets for those sessions
+    const { data: sets } = await supabase
+      .from('logged_sets')
+      .select('session_id, exercise_id, reps, weight, rpe, logged_at')
+      .in('session_id', sessionIds);
+
+    const setRows = (sets ?? []) as {
+      session_id: string;
+      exercise_id: string;
+      reps: number;
+      weight: number;
+      rpe: number | null;
+      logged_at: string;
+    }[];
+
+    // Resolve primary muscle group per exercise (batched)
+    const muscleByExercise = await resolveMuscleGroups(
+      supabase,
+      Array.from(new Set(setRows.map((s) => s.exercise_id)))
+    );
+
+    const analyticsSets: AnalyticsSet[] = setRows.map((s) => ({
+      weight: s.weight,
+      reps: s.reps,
+      rpe: s.rpe,
+      logged_at: s.logged_at ?? completedAtById.get(s.session_id) ?? sinceIso,
+      muscle_group: muscleByExercise.get(s.exercise_id) ?? null,
+    }));
+
+    return {
+      window_weeks: weeks,
+      volume_trend: computeVolumeTrend(analyticsSets),
+      muscle_balance: computeMuscleBalance(analyticsSets),
+      adherence: computeAdherence({
+        completed_session_dates: sessionRows.map((s) => s.completed_at),
+        planned_per_week: plannedPerWeek,
+        weeks,
+      }),
+    };
+  },
+
+  /**
+   * get_pr_history — Per-exercise PR timeline computed from logged sets. Also backfills
+   * the personal_records table when the latest computed PR is not yet persisted (the
+   * table exists but was previously never written to).
+   * Subject to the health_access Permission_Category.
+   */
+  get_pr_history: async (supabase, userId, args) => {
+    const exerciseNameArg = (args.exercise_name as string | undefined)?.trim();
+    const limitExercises = Math.min(Math.max((args.limit as number) ?? 10, 1), 50);
+
+    // Resolve target exercise ids (optionally filtered by name)
+    let exerciseQuery = supabase
+      .from('exercises')
+      .select('id, name')
+      .or(`is_global.eq.true,user_id.eq.${userId}`);
+    if (exerciseNameArg) {
+      exerciseQuery = exerciseQuery.ilike('name', exerciseNameArg);
+    }
+    const { data: exercises } = await exerciseQuery;
+    const exerciseRows = (exercises ?? []) as { id: string; name: string }[];
+    if (exerciseRows.length === 0) {
+      return { pr_history: [] };
+    }
+
+    const nameById = new Map(exerciseRows.map((e) => [e.id, e.name]));
+    const exerciseIds = exerciseRows.map((e) => e.id);
+
+    // Only sets belonging to this user's sessions. Fetch the user's sessions first.
+    const { data: userSessions } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('user_id', userId);
+    const userSessionIds = new Set((userSessions ?? []).map((s: { id: string }) => s.id));
+
+    const { data: sets } = await supabase
+      .from('logged_sets')
+      .select('session_id, exercise_id, reps, weight, logged_at')
+      .in('exercise_id', exerciseIds)
+      .order('logged_at', { ascending: true }); // oldest-first for PR walk
+
+    const setRows = ((sets ?? []) as {
+      session_id: string;
+      exercise_id: string;
+      reps: number;
+      weight: number;
+      logged_at: string;
+    }[]).filter((s) => userSessionIds.has(s.session_id));
+
+    // Group oldest-first by exercise
+    const byExercise = new Map<string, AnalyticsSet[]>();
+    for (const s of setRows) {
+      const arr = byExercise.get(s.exercise_id) ?? [];
+      arr.push({ weight: s.weight, reps: s.reps, logged_at: s.logged_at });
+      byExercise.set(s.exercise_id, arr);
+    }
+
+    const histories = Array.from(byExercise.entries())
+      .map(([exerciseId, exSets]) =>
+        computeExercisePRHistory(nameById.get(exerciseId) ?? 'Unknown', exSets)
+      )
+      .filter((h) => h.records.length > 0)
+      .sort((a, b) => b.best_estimated_1rm - a.best_estimated_1rm)
+      .slice(0, limitExercises);
+
+    // Backfill personal_records for the latest PR of each exercise if missing.
+    await backfillPersonalRecords(supabase, userId, byExercise, nameById);
+
+    return { pr_history: histories };
+  },
+
+  /**
+   * get_cardio_analytics — Cardio pace/speed trend, per-distance-bucket pace, and weekly
+   * load, combining GPS routes and imported health-provider workouts. Delegates the math
+   * to the pure analytics-engine.
+   * Subject to the health_access Permission_Category.
+   */
+  get_cardio_analytics: async (supabase, userId, args) => {
+    const weeks = Math.min(Math.max((args.weeks as number) ?? 8, 1), 52);
+    const activityType = ((args.activity_type as string) ?? 'running') as CardioActivityType;
+    const sinceIso = daysAgoIso(weeks * 7);
+
+    // GPS routes (running/walking). routes has no activity type; treat as the requested type.
+    const { data: routes } = await supabase
+      .from('routes')
+      .select('distance_meters, duration_seconds, avg_pace_seconds_per_km, avg_speed_kmh, elevation_gain_meters, created_at')
+      .eq('user_id', userId)
+      .gte('created_at', sinceIso);
+
+    // Imported health-provider workouts (carry a workout_type)
+    const { data: imported } = await supabase
+      .from('imported_workouts')
+      .select('workout_type, start_time, duration_seconds, distance_meters, average_pace_seconds_per_km, average_speed_kmh, elevation_gain_meters')
+      .eq('user_id', userId)
+      .gte('start_time', sinceIso);
+
+    const routeEfforts: CardioEffort[] = (routes ?? []).map((r: Record<string, unknown>) => ({
+      activity_type: activityType,
+      distance_meters: (r.distance_meters as number) ?? 0,
+      duration_seconds: (r.duration_seconds as number) ?? 0,
+      avg_pace_seconds_per_km: (r.avg_pace_seconds_per_km as number) ?? null,
+      avg_speed_kmh: (r.avg_speed_kmh as number) ?? null,
+      elevation_gain_meters: (r.elevation_gain_meters as number) ?? null,
+      date: (r.created_at as string),
+    }));
+
+    const importedEfforts: CardioEffort[] = (imported ?? []).map((w: Record<string, unknown>) => ({
+      activity_type: mapWorkoutTypeToActivity(w.workout_type as string),
+      distance_meters: (w.distance_meters as number) ?? 0,
+      duration_seconds: (w.duration_seconds as number) ?? 0,
+      avg_pace_seconds_per_km: (w.average_pace_seconds_per_km as number) ?? null,
+      avg_speed_kmh: (w.average_speed_kmh as number) ?? null,
+      elevation_gain_meters: (w.elevation_gain_meters as number) ?? null,
+      date: (w.start_time as string),
+    }));
+
+    const allEfforts = [...routeEfforts, ...importedEfforts];
+    const typeEfforts = allEfforts.filter((e) => e.activity_type === activityType);
+
+    return {
+      window_weeks: weeks,
+      activity_type: activityType,
+      effort_count: typeEfforts.length,
+      pace_trend: computeCardioTrend(activityType, allEfforts),
+      distance_buckets: computeDistanceBuckets(typeEfforts),
+      weekly_load: computeCardioLoad(allEfforts),
+    };
+  },
+
+  /**
+   * suggest_progression — Unified, profile-aware progression suggestions.
+   *
+   * The SERVER assembles all inputs (exercise history, program targets, recovery
+   * window, cardio analytics, and profile) from the DB and passes them to the
+   * pure progression engine v2. The model no longer hand-assembles fragile
+   * payloads — any args are treated only as optional overrides.
+   * Subject to the program_edits Permission_Category.
+   */
+  suggest_progression: async (supabase, userId, args) => {
+    const scope = ((args.scope as string) ?? 'full_program') as 'full_program' | 'single_exercise';
+    const sessionsToScan = Math.min(Math.max((args.sessions as number) ?? 6, 1), 30);
+
+    // 1) Program targets from the active program.
+    const { programTargets, exerciseNameToMuscle } = await assembleProgramTargets(supabase, userId);
+
+    // 2) Exercise history (recent sessions per exercise, most-recent-first).
+    const exerciseHistory = await assembleExerciseHistory(
+      supabase,
+      userId,
+      exerciseNameToMuscle,
+      sessionsToScan
+    );
+
+    // 3) Recovery window (reuse the recovery handler; map to the engine shape).
+    const recoveryRaw = (await toolHandlerRegistry.get_recovery_summary(supabase, userId, { days: 7 })) as any;
+    const recovery: RecoveryV2 = {
+      avg_sleep_hours: recoveryRaw?.sleep?.avg_total_hours ?? null,
+      hrv_latest_ms: recoveryRaw?.hrv?.latest_ms ?? null,
+      hrv_baseline_ms: recoveryRaw?.hrv?.baseline_ms ?? null,
+      resting_hr_bpm: recoveryRaw?.heart_rate?.avg_resting_bpm ?? null,
     };
 
-    return { suggestions: evaluateProgression(input as any) };
+    // 4) Cardio analytics for running (default) — mapped to the engine input.
+    const cardio: CardioProgressionInput[] = [];
+    try {
+      const cardioRaw = (await toolHandlerRegistry.get_cardio_analytics(supabase, userId, { activity_type: 'running', weeks: 8 })) as any;
+      if (cardioRaw?.effort_count > 0) {
+        cardio.push({
+          activity_type: cardioRaw.activity_type,
+          pace_trend: cardioRaw.pace_trend?.pace_trend ?? 'stable',
+          weekly_distance_trend: cardioRaw.weekly_load?.distance_trend ?? 'stable',
+          avg_weekly_distance_meters: cardioRaw.weekly_load?.avg_weekly_distance_meters ?? 0,
+          effort_count: cardioRaw.effort_count ?? 0,
+        });
+      }
+    } catch {
+      // Cardio is optional — proceed with strength-only if it fails.
+    }
+
+    // 5) Profile.
+    const { data: profileRow } = await supabase
+      .from('user_profiles')
+      .select('goal, experience_level, injuries, equipment')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const profile: ProfileForProgression | null = profileRow ?? null;
+
+    const result = evaluateProgressionV2({
+      exercise_history: exerciseHistory,
+      recovery,
+      program_targets: programTargets,
+      profile,
+      cardio,
+      scope,
+    });
+
+    return result;
+  },
+
+  /**
+   * critique_program — Reviews the user's ACTIVE program against their profile and
+   * recent training analytics, returning structured findings + concrete proposed
+   * changes. Does NOT mutate anything — the agent must present findings and route
+   * any change through program_modify (approval gate unchanged).
+   * Subject to the program_edits Permission_Category.
+   */
+  critique_program: async (supabase, userId, _args) => {
+    // Active program id + training-day count.
+    const { data: program } = await supabase
+      .from('programs')
+      .select('id, name')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!program) {
+      return { active_program: null, findings: [], note: 'No active program to critique.' };
+    }
+
+    const { data: days } = await supabase
+      .from('program_days')
+      .select('id')
+      .eq('program_id', program.id);
+    const trainingDays = (days ?? []).length;
+
+    // Program targets (with muscle group + equipment) reuse the progression assembly helper.
+    const { programTargets, exerciseNameToMuscle, exerciseNameToEquipment } = await assembleProgramTargets(supabase, userId);
+    const targets = programTargets.map((t) => ({
+      exercise_name: t.exercise_name,
+      muscle_group: exerciseNameToMuscle.get(t.exercise_name) ?? null,
+      target_sets: t.target_sets,
+      equipment: exerciseNameToEquipment.get(t.exercise_name) ?? null,
+    }));
+
+    // Profile.
+    const { data: profileRow } = await supabase
+      .from('user_profiles')
+      .select('goal, experience_level, weekly_frequency, equipment')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    // Recent muscle balance from logged history (last 8 weeks) + recovery flag.
+    let muscleBalance = null;
+    try {
+      const analytics = (await toolHandlerRegistry.get_training_analytics(supabase, userId, { weeks: 8 })) as any;
+      muscleBalance = analytics?.muscle_balance ?? null;
+    } catch {
+      // optional
+    }
+
+    let recoveryCompromised = false;
+    try {
+      const recoveryRaw = (await toolHandlerRegistry.get_recovery_summary(supabase, userId, { days: 7 })) as any;
+      const sleep = recoveryRaw?.sleep?.avg_total_hours;
+      const hrvLatest = recoveryRaw?.hrv?.latest_ms;
+      const hrvBaseline = recoveryRaw?.hrv?.baseline_ms;
+      const sleepBreach = sleep != null && sleep < 6;
+      const hrvBreach = hrvLatest != null && hrvBaseline != null && hrvBaseline > 0 &&
+        (hrvBaseline - hrvLatest) / hrvBaseline >= 0.2;
+      recoveryCompromised = sleepBreach || hrvBreach;
+    } catch {
+      // optional
+    }
+
+    const findings = critiqueProgram({
+      training_days: trainingDays,
+      targets,
+      profile: profileRow ?? null,
+      muscle_balance: muscleBalance,
+      recovery_compromised: recoveryCompromised,
+    });
+
+    return {
+      program: { id: program.id, name: program.name, training_days: trainingDays },
+      findings,
+    };
   },
 };
 

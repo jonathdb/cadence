@@ -68,7 +68,11 @@ const TOOL_PERMISSION_MAP: Record<string, PermissionCategory> = {
   get_programs: 'program_edits',
   get_session_history: 'health_access',
   get_session_details: 'health_access',
+  get_training_analytics: 'health_access',
+  get_pr_history: 'health_access',
+  get_cardio_analytics: 'health_access',
   suggest_progression: 'program_edits',
+  critique_program: 'program_edits',
 };
 
 /**

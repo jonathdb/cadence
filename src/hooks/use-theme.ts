@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export interface Theme extends ThemeColors {
   mode: 'light' | 'dark';
-  shadows: typeof Shadows.dark;
+  shadows: (typeof Shadows)['dark'] | (typeof Shadows)['light'];
 }
 
 export function useTheme(): Theme {

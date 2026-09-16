@@ -1,7 +1,9 @@
 /**
- * Program screen — displays the user's active program overview.
- * Shows all days with exercises, targets. Links to day detail and library.
- * Supports pull-to-refresh and handles "No active program" state.
+ * Program screen — Training Programs (Kinetic Obsidian).
+ *
+ * Shows the active program: a phase header card, an agent prompt banner,
+ * library/template actions, and per-day workout cards with exercise rows.
+ * Preserves all existing data fetching, refresh, and navigation behavior.
  *
  * Requirements: 1.2, 4.3, 5.1, 5.2
  */
@@ -15,11 +17,16 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LastSessionCard } from '@/components/LastSessionCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radii, Spacing } from '@/constants/theme';
+import { Badge } from '@/components/ui/Badge';
+import { GhostButton } from '@/components/ui/Button';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { Icon } from '@/components/ui/Icon';
+import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/utils/supabase';
@@ -51,10 +58,18 @@ interface ProgramData {
   program_days: ProgramDayData[];
 }
 
+function formatPrescription(item: ProgramDayItemData): string {
+  const parts = [`${item.target_sets}×${item.target_reps}`];
+  if (item.target_weight) parts.push(`${item.target_weight}kg`);
+  if (item.target_rpe) parts.push(`RPE ${item.target_rpe}`);
+  return parts.join(' • ');
+}
+
 export default function ProgramScreen() {
   const { session } = useAuth();
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [program, setProgram] = useState<ProgramData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -147,79 +162,142 @@ export default function ProgramScreen() {
   const sortedDays = [...(program.program_days || [])].sort(
     (a, b) => a.day_number - b.day_number
   );
+  const totalExercises = sortedDays.reduce(
+    (sum, d) => sum + (d.program_day_items?.length || 0),
+    0
+  );
 
   return (
     <ThemedView style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: TabBarClearance + insets.bottom },
+        ]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />}
       >
-        <View style={styles.header}>
-          <ThemedText type="headlineMedium" style={styles.programName}>
+        {/* Phase header card */}
+        <GlassCard elevation="mid" radius="xl" style={styles.phaseCard}>
+          <View style={styles.phaseTagRow}>
+            <ThemedText type="labelCaps" style={{ color: theme.accent }}>
+              Current Program
+            </ThemedText>
+            <Badge label="Active" variant="success" dot />
+          </View>
+          <ThemedText type="headlineLarge" style={styles.phaseTitle}>
             {program.name}
           </ThemedText>
-          <View style={[styles.badge, { backgroundColor: theme.success }]}>
-            <ThemedText style={styles.badgeText}>Active</ThemedText>
+
+          <View style={styles.phaseStats}>
+            <View style={styles.phaseStat}>
+              <ThemedText type="dataMetric" style={{ color: theme.accent }}>
+                {sortedDays.length}
+              </ThemedText>
+              <ThemedText type="labelCaps" themeColor="textSecondary">
+                Training Days
+              </ThemedText>
+            </View>
+            <View style={[styles.phaseDivider, { backgroundColor: theme.border }]} />
+            <View style={styles.phaseStat}>
+              <ThemedText type="dataMetric" style={{ color: theme.success }}>
+                {totalExercises}
+              </ThemedText>
+              <ThemedText type="labelCaps" themeColor="textSecondary">
+                Exercises
+              </ThemedText>
+            </View>
           </View>
-        </View>
 
+          <View style={styles.phaseActions}>
+            <GhostButton
+              label="Program Library"
+              icon={<Icon name="library" size={18} color={theme.text} />}
+              style={styles.phaseActionBtn}
+              onPress={() => router.push('/(tabs)/program/saved-programs')}
+            />
+            <GhostButton
+              label="Templates"
+              icon={<Icon name="grid" size={18} color={theme.text} />}
+              style={styles.phaseActionBtn}
+              onPress={() => router.push('/(tabs)/program/templates')}
+            />
+          </View>
+        </GlassCard>
+
+        {/* Agent prompt banner */}
         <Pressable
-          style={[styles.libraryButton, { backgroundColor: theme.backgroundElement }]}
-          onPress={() => router.push('/(tabs)/program/saved-programs')}
+          onPress={() => router.push('/(tabs)/chat')}
           accessibilityRole="button"
-          accessibilityLabel="View program library"
+          accessibilityLabel="Ask the Cadence agent to adapt your program"
         >
-          <ThemedText style={[styles.libraryButtonText, { color: theme.accent }]}>Program Library</ThemedText>
+          <GlassCard elevation="low" radius="full" style={styles.agentBanner}>
+            <View style={[styles.agentIcon, { backgroundColor: theme.accentSoft }]}>
+              <Icon name="bot" size={18} color={theme.accent} />
+            </View>
+            <ThemedText type="bodyMedium" style={styles.agentText} numberOfLines={1}>
+              Want to adapt volume?{' '}
+              <ThemedText type="labelLarge" style={{ color: theme.text }}>
+                Ask Cadence Agent
+              </ThemedText>
+            </ThemedText>
+            <Icon name="arrow-forward" size={18} color={theme.accent} />
+          </GlassCard>
         </Pressable>
 
-        <Pressable
-          style={[styles.libraryButton, { backgroundColor: theme.backgroundElement }]}
-          onPress={() => router.push('/(tabs)/program/templates')}
-          accessibilityRole="button"
-          accessibilityLabel="Browse community templates"
-        >
-          <ThemedText style={[styles.libraryButtonText, { color: theme.accent }]}>Browse Templates</ThemedText>
-        </Pressable>
-
-        {sortedDays.map((day) => {
+        {/* Daily workout cards */}
+        {sortedDays.map((day, index) => {
           const sortedItems = [...(day.program_day_items || [])].sort(
             (a, b) => a.order_index - b.order_index
           );
+          const isFeatured = index === 0;
 
           return (
             <Pressable
               key={day.id}
-              style={[styles.dayCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}
               onPress={() => router.push(`/(tabs)/program/${day.id}`)}
               accessibilityRole="button"
               accessibilityLabel={`View Day ${day.day_number}: ${day.name}`}
             >
-              <View style={styles.dayHeader}>
-                <ThemedText style={[styles.dayTitle, { color: theme.text }]}>
-                  Day {day.day_number}: {day.name}
-                </ThemedText>
-                <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
-                  {sortedItems.length} exercise{sortedItems.length !== 1 ? 's' : ''}
-                </ThemedText>
-              </View>
-              {sortedItems.slice(0, 4).map((item) => (
-                <View key={item.id} style={styles.exerciseRow}>
-                  <ThemedText style={{ fontWeight: '500', fontSize: 14, color: theme.text }}>
-                    {item.exercises?.name || 'Unknown Exercise'}
-                  </ThemedText>
-                  <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
-                    {item.target_sets}×{item.target_reps}
-                    {item.target_weight ? ` @ ${item.target_weight}kg` : ''}
-                    {item.target_rpe ? ` RPE ${item.target_rpe}` : ''}
-                  </ThemedText>
+              <GlassCard elevation="low" active={isFeatured} style={styles.dayCard}>
+                <View style={styles.dayHeader}>
+                  <View style={styles.dayTitleWrap}>
+                    <ThemedText type="headlineSmall" numberOfLines={1}>
+                      Day {day.day_number}: {day.name}
+                    </ThemedText>
+                    <ThemedText type="bodySmall" themeColor="textSecondary">
+                      {sortedItems.length} exercise{sortedItems.length !== 1 ? 's' : ''}
+                    </ThemedText>
+                  </View>
+                  {isFeatured ? <Badge label="Ready" variant="success" /> : null}
                 </View>
-              ))}
-              {sortedItems.length > 4 && (
-                <ThemedText style={{ fontSize: 13, color: theme.accent, paddingLeft: Spacing.two, fontWeight: '500' }}>
-                  +{sortedItems.length - 4} more
-                </ThemedText>
-              )}
-              <LastSessionCard programDayId={day.id} />
+
+                <View style={styles.exerciseList}>
+                  {sortedItems.slice(0, 4).map((item, i) => (
+                    <View key={item.id} style={styles.exerciseRow}>
+                      <View style={[styles.exerciseNum, { backgroundColor: theme.backgroundHighest }]}>
+                        <ThemedText type="labelMedium" style={{ color: theme.accent }}>
+                          {i + 1}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.flexMin}>
+                        <ThemedText type="titleMedium" numberOfLines={1}>
+                          {item.exercises?.name || 'Unknown Exercise'}
+                        </ThemedText>
+                        <ThemedText type="bodySmall" themeColor="textSecondary">
+                          {formatPrescription(item)}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  ))}
+                  {sortedItems.length > 4 && (
+                    <ThemedText type="labelMedium" style={{ color: theme.accent, paddingLeft: 44 }}>
+                      +{sortedItems.length - 4} more
+                    </ThemedText>
+                  )}
+                </View>
+
+                <LastSessionCard programDayId={day.id} />
+              </GlassCard>
             </Pressable>
           );
         })}
@@ -239,64 +317,102 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
   },
   scrollContent: {
+    padding: Spacing.three,
+    gap: Spacing.three,
+  },
+  flexMin: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  // Phase card
+  phaseCard: {
     padding: Spacing.four,
     gap: Spacing.three,
   },
-  header: {
+  phaseTagRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  phaseTitle: {
+    marginTop: -Spacing.one,
+  },
+  phaseStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.four,
+  },
+  phaseStat: {
+    gap: 2,
+  },
+  phaseDivider: {
+    width: 1,
+    height: 36,
+  },
+  phaseActions: {
+    flexDirection: 'row',
     gap: Spacing.two,
   },
-  programName: {
+  phaseActionBtn: {
     flex: 1,
   },
-  badge: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 4,
-    borderRadius: Radii.full,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  libraryButton: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Radii.medium,
-    alignSelf: 'flex-start',
-  },
-  libraryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  libraryLink: {
-    marginTop: Spacing.three,
-  },
-  dayCard: {
-    borderWidth: 1,
-    borderRadius: Radii.large,
-    padding: Spacing.three,
+  // Agent banner
+  agentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.twoHalf,
+  },
+  agentIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agentText: {
+    flex: 1,
+  },
+  // Day cards
+  dayCard: {
+    padding: Spacing.three,
+    gap: Spacing.twoHalf,
   },
   dayHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.two,
   },
-  dayTitle: {
-    fontWeight: '700',
-    fontSize: 16,
+  dayTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  exerciseList: {
+    gap: Spacing.two,
   },
   exerciseRow: {
-    paddingLeft: Spacing.two,
-    gap: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.twoHalf,
+  },
+  exerciseNum: {
+    width: 28,
+    height: 28,
+    borderRadius: Radii.small,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: {
     marginBottom: Spacing.two,
   },
   emptyText: {
     textAlign: 'center',
+  },
+  libraryLink: {
+    marginTop: Spacing.three,
   },
 });

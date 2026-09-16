@@ -186,9 +186,9 @@ export default function SpotifyScreen() {
                 accessibilityLabel="Reconnect Spotify account"
               >
                 {isProcessing ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={theme.accentText} size="small" />
                 ) : (
-                  <ThemedText style={styles.buttonText}>Reconnect Spotify</ThemedText>
+                  <ThemedText style={[styles.buttonText, { color: theme.accentText }]}>Reconnect Spotify</ThemedText>
                 )}
               </Pressable>
             </>

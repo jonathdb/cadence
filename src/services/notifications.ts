@@ -19,6 +19,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -234,6 +235,110 @@ export async function scheduleTimerNotification(
     // Notification scheduling failed, degrade gracefully
     return null;
   }
+}
+
+/**
+ * Schedule a near-immediate local notification announcing a proactive coach
+ * insight. Carries a `data.route` payload the app can use to deep-link to chat
+ * when the notification is tapped. Returns the identifier, or null when
+ * permission is not granted / platform is web / module unavailable.
+ *
+ * Mirrors scheduleTimerNotification's guards (never schedules without granted
+ * permission — Req 3.3).
+ */
+export async function scheduleInsightNotification(
+  title: string = 'Cadence has a suggestion',
+  body: string = 'Cadence has a suggestion after today’s session.',
+  route: string = '/(tabs)/chat'
+): Promise<string | null> {
+  if (cachedPermissionStatus !== 'granted') return null;
+  if (Platform.OS === 'web') return null;
+
+  const notif = await getNotificationsModule();
+  if (!notif) return null;
+
+  try {
+    const identifier = await notif.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: true,
+        data: { route },
+      },
+      // Fire almost immediately (a small delay so it lands after the session UI settles).
+      trigger: {
+        type: notif.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 2,
+      },
+    });
+    return identifier;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * React hook that deep-links when the user taps a notification carrying a
+ * `data.route` payload. Handles both the cold-start case (app opened FROM a
+ * notification, via getLastNotificationResponse) and the warm case (tapped while
+ * running, via addNotificationResponseReceivedListener).
+ *
+ * Follows the Expo Router pattern from the SDK 57 notifications docs. No-op on
+ * web / when expo-notifications is unavailable. Only default taps are honored
+ * (DEFAULT_ACTION_IDENTIFIER), and only string routes are navigated.
+ *
+ * @param navigate - a function that navigates to a route (e.g. router.push).
+ */
+export function useNotificationDeepLink(navigate: (route: string) => void): void {
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    let subscription: { remove: () => void } | null = null;
+    let cancelled = false;
+
+    const routeFrom = (response: unknown): string | null => {
+      const data = (response as {
+        actionIdentifier?: string;
+        notification?: { request?: { content?: { data?: Record<string, unknown> } } };
+      } | null);
+      if (!data) return null;
+      const route = data.notification?.request?.content?.data?.route;
+      return typeof route === 'string' ? route : null;
+    };
+
+    (async () => {
+      const notif = await getNotificationsModule();
+      if (!notif || cancelled) return;
+
+      // Cold start: app was opened by tapping a notification.
+      try {
+        const last = notif.getLastNotificationResponse();
+        const route = routeFrom(last);
+        if (route && last?.actionIdentifier === notif.DEFAULT_ACTION_IDENTIFIER) {
+          navigate(route);
+          // Clear so we don't re-navigate on next mount.
+          notif.clearLastNotificationResponse?.();
+        }
+      } catch {
+        // ignore
+      }
+
+      // Warm: user taps a notification while the app is running.
+      subscription = notif.addNotificationResponseReceivedListener((response: unknown) => {
+        const route = routeFrom(response);
+        const actionId = (response as { actionIdentifier?: string } | null)?.actionIdentifier;
+        if (route && actionId === notif.DEFAULT_ACTION_IDENTIFIER) {
+          navigate(route);
+        }
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+    // navigate is expected to be stable (e.g. router.push); include it to satisfy lint.
+  }, [navigate]);
 }
 
 /**

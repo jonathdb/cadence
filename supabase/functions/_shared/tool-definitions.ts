@@ -420,86 +420,94 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'suggest_progression',
+      name: 'get_training_analytics',
       description:
-        'Analyze exercise history, recovery data, and program targets to suggest weight/volume adjustments for the next session. ' +
-        'Call get_session_details, get_recovery_summary, and get_active_program first to gather the required input data. ' +
-        'Returns structured suggestions with reasoning that should be presented to the user for approval before applying changes.',
+        'Retrieve strength-training analytics over a rolling window: weekly volume trend, ' +
+        'per-muscle-group volume balance (with untrained groups and an imbalance ratio), and ' +
+        'consistency/adherence (completed vs planned sessions, weekly streak). Use this when the ' +
+        'user asks about progress, trends, volume, muscle balance, or consistency before making suggestions.',
       parameters: {
         type: 'object',
         properties: {
-          exercise_history: {
-            type: 'array',
-            description: 'Array of exercise histories with recent session data (most-recent-first)',
-            items: {
-              type: 'object',
-              properties: {
-                exercise_name: { type: 'string' },
-                muscle_group: {
-                  type: 'string',
-                  enum: ['chest', 'back', 'shoulders', 'biceps', 'triceps',
-                         'quads', 'hamstrings', 'glutes', 'calves'],
-                },
-                sessions: {
-                  type: 'array',
-                  description: 'Recent sessions for this exercise, ordered most-recent-first',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      session_date: { type: 'string', description: 'ISO date string' },
-                      sets: {
-                        type: 'array',
-                        items: {
-                          type: 'object',
-                          properties: {
-                            weight: { type: 'number' },
-                            reps: { type: 'integer' },
-                            rpe: { type: 'number', nullable: true },
-                          },
-                          required: ['weight', 'reps'],
-                        },
-                      },
-                    },
-                    required: ['session_date', 'sets'],
-                  },
-                },
-              },
-              required: ['exercise_name', 'muscle_group', 'sessions'],
-            },
-          },
-          recovery_summary: {
-            type: 'object',
-            description: 'Recent recovery data (from get_recovery_summary)',
-            properties: {
-              avg_sleep_hours: { type: 'number', description: 'Average sleep hours over the period' },
-              hrv_ms: { type: 'number', description: 'Most recent HRV in milliseconds' },
-              hrv_baseline_ms: { type: 'number', description: 'User baseline HRV in milliseconds (7-day average)' },
-              resting_hr_bpm: { type: 'number', description: 'Resting heart rate in BPM' },
-            },
-            required: ['avg_sleep_hours', 'hrv_ms', 'hrv_baseline_ms', 'resting_hr_bpm'],
-          },
-          program_targets: {
-            type: 'array',
-            description: 'Current program targets for each exercise (from get_active_program)',
-            items: {
-              type: 'object',
-              properties: {
-                exercise_name: { type: 'string' },
-                target_sets: { type: 'integer' },
-                target_rep_range: { type: 'string', description: 'e.g. "8-12"' },
-                target_weight: { type: 'number' },
-                target_rpe: { type: 'number', nullable: true },
-              },
-              required: ['exercise_name', 'target_sets', 'target_rep_range', 'target_weight'],
-            },
-          },
+          weeks: { type: 'integer', minimum: 1, maximum: 52, description: 'Look-back window in weeks (default 8)' },
+          planned_per_week: { type: 'integer', description: 'Planned sessions per week for adherence (default 3; prefer the profile/program value)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_pr_history',
+      description:
+        'Retrieve per-exercise personal-record timelines (weight, estimated 1RM via Brzycki, and ' +
+        'reps-at-weight PRs) computed from logged sets. Optionally filter to a single exercise by name. ' +
+        'Use when the user asks about PRs, bests, or strength progress on specific lifts.',
+      parameters: {
+        type: 'object',
+        properties: {
+          exercise_name: { type: 'string', description: 'Optional exact/like exercise name filter' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Max exercises to return, ranked by best estimated 1RM (default 10)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_cardio_analytics',
+      description:
+        'Retrieve cardio analytics for an activity type over a rolling window: pace/speed trend ' +
+        '(elevation-adjusted; "increasing" means getting faster), per-distance-bucket pace, and weekly ' +
+        'load (distance/duration). Combines GPS routes and imported health-provider workouts. Use when ' +
+        'the user asks about running/cycling/walking progress, pace, or endurance trends.',
+      parameters: {
+        type: 'object',
+        properties: {
+          activity_type: { type: 'string', enum: ['running', 'cycling', 'walking'], description: 'Cardio activity type (default running)' },
+          weeks: { type: 'integer', minimum: 1, maximum: 52, description: 'Look-back window in weeks (default 8)' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'critique_program',
+      description:
+        'Review the user\'s ACTIVE training program against their profile and recent analytics. ' +
+        'The server assembles program structure, profile, muscle balance, and recovery itself — just call it. ' +
+        'Returns structured findings (muscle_balance, frequency, volume_vs_recovery, progression, equipment, goal_alignment) ' +
+        'each with a severity and an optional concrete proposed_change. Use this when the user asks to "review my program", ' +
+        '"is my program good?", or similar. Present findings conversationally and route any accepted change through program_modify (requires approval).',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'suggest_progression',
+      description:
+        'Generate unified, profile-aware progression suggestions for the user\'s next block of training. ' +
+        'The SERVER assembles all required data itself (exercise history, program targets, recovery window, cardio analytics, and the user profile) — ' +
+        'you do NOT need to gather or pass that data. Just call this tool. It returns strength_suggestions (per exercise), ' +
+        'cardio_suggestions, a recovery_state, and guardrail_notes. Present the results conversationally with reasoning and ' +
+        'ALWAYS get explicit user confirmation before applying any change via program_modify.',
+      parameters: {
+        type: 'object',
+        properties: {
           scope: {
             type: 'string',
             enum: ['full_program', 'single_exercise'],
             description: 'Whether to evaluate all exercises or just the first one (default: full_program)',
           },
+          sessions: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 30,
+            description: 'How many recent completed sessions to analyze for exercise history (default 6)',
+          },
         },
-        required: ['exercise_history', 'recovery_summary', 'program_targets'],
       },
     },
   },
