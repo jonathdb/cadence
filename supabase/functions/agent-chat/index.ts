@@ -9,7 +9,11 @@
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
-import { buildProfileSummary } from '../_shared/profile-summary.ts';
+import { curatedModelIds, fetchProviderCatalog } from '../_shared/model-catalog.ts';
+import { selectModel } from '../_shared/model-selector.ts';
+import { buildProfileSummary, composeSystemPrompt } from '../_shared/profile-summary.ts';
+import { checkAndIncrementUsage } from '../_shared/rate-limiter.ts';
+import { resolveTier } from '../_shared/tier-resolver.ts';
 import { toAnthropicTools, toolDefinitions } from '../_shared/tool-definitions.ts';
 
 /**
@@ -53,6 +57,9 @@ interface RequestBody {
   message?: string;
   conversation: ChatMessage[];
   provider?: 'openai' | 'anthropic';
+  /** Optional client-chosen model. Validated against the live catalog + access
+   *  rules; falls back to the tier default (MODEL_MAP) when absent or invalid. */
+  model?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -571,7 +578,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // ─── MODEL SELECTION ───────────────────────────────────────────────────────
-  const { model } = selectModel(tierResolution.tier, effectiveProvider);
+  // Default to the tier's curated model, then honor a validated client choice.
+  let model = selectModel(tierResolution.tier, effectiveProvider).model;
+
+  if (typeof body.model === 'string' && body.model.trim().length > 0) {
+    const requested = body.model.trim();
+
+    if (tierResolution.tier === 'byok') {
+      // BYOK: any live model the user's key can actually run for this provider.
+      const catalog = await fetchProviderCatalog(effectiveProvider, tierResolution.apiKey);
+      const allowed = catalog.some((m) => m.id === requested);
+      if (!allowed) {
+        return errorResponse(400, 'invalid_model',
+          `Model "${requested}" is not available for your ${effectiveProvider} key.`);
+      }
+      model = requested;
+    } else {
+      // Free/Pro run on the shared backend key → only curated models allowed,
+      // to keep backend cost bounded.
+      const curated = curatedModelIds(effectiveProvider);
+      if (!curated.includes(requested)) {
+        return errorResponse(403, 'model_not_permitted',
+          `Model "${requested}" requires your own ${effectiveProvider} API key. Add one in Settings or choose an included model.`);
+      }
+      model = requested;
+    }
+  }
 
   // Build conversation messages
   const messages: ChatMessage[] = [

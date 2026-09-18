@@ -28,8 +28,10 @@ export interface AiTierState {
   dailyUsed: number;
   /** Daily message limit (null = unlimited for BYOK) */
   dailyLimit: number | null;
-  /** Preferred AI provider */
+  /** Preferred AI provider (implied by the chosen model) */
   preferredProvider: AiProvider;
+  /** Chosen model id (null = use tier default) */
+  preferredModel: string | null;
   /** Whether tier info is being loaded */
   isLoading: boolean;
   /** Whether the user has hit the daily limit */
@@ -41,6 +43,8 @@ export interface AiTierActions {
   setTierInfo: (tier: AiTier, used: number, limit: number | null) => void;
   /** Update preferred provider */
   setPreferredProvider: (provider: AiProvider) => void;
+  /** Set the chosen model + its provider and persist both to user_settings */
+  setPreferredModel: (userId: string, provider: AiProvider, model: string) => Promise<void>;
   /** Update usage from X-Rate-Limit-Remaining header */
   updateUsageFromHeader: (remaining: number) => void;
   /** Mark as rate limited */
@@ -69,6 +73,7 @@ export const useAiTierStore = create<AiTierStore>((set, get) => ({
   dailyUsed: 0,
   dailyLimit: 20,
   preferredProvider: 'openai',
+  preferredModel: null,
   isLoading: false,
   isRateLimited: false,
 
@@ -163,16 +168,17 @@ export const useAiTierStore = create<AiTierStore>((set, get) => ({
         isLoading: false,
       });
 
-      // 4. Fetch provider preference
+      // 4. Fetch provider + model preference
       const { data: settings } = await supabase
         .from('user_settings')
-        .select('preferred_ai_provider')
+        .select('preferred_ai_provider, preferred_model')
         .eq('user_id', userId)
         .maybeSingle();
 
       if (settings?.preferred_ai_provider) {
         set({ preferredProvider: settings.preferred_ai_provider as AiProvider });
       }
+      set({ preferredModel: (settings?.preferred_model as string | null) ?? null });
     } catch (err) {
       console.error('[AiTierStore] Failed to fetch tier info:', err);
       set({ isLoading: false });
@@ -192,6 +198,29 @@ export const useAiTierStore = create<AiTierStore>((set, get) => ({
 
     if (error) {
       console.error('[AiTierStore] Failed to save provider preference:', error.message);
+    }
+  },
+
+  setPreferredModel: async (userId, provider, model) => {
+    // Optimistic local update so the picker reflects the choice immediately.
+    set({ preferredProvider: provider, preferredModel: model });
+
+    // Upsert (not update) so a missing user_settings row is created rather than
+    // silently ignored.
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert(
+        {
+          user_id: userId,
+          preferred_ai_provider: provider,
+          preferred_model: model,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      );
+
+    if (error) {
+      console.error('[AiTierStore] Failed to save model preference:', error.message);
     }
   },
 }));

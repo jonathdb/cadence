@@ -7,11 +7,11 @@
  * Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6
  */
 import { useCallback } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/providers/AuthProvider';
 import { openManageSubscriptions, purchasePro } from '@/services/purchases';
-import { type AiProvider, type AiTier, useAiTierStore } from '@/store/ai-tier';
+import { type AiTier, useAiTierStore } from '@/store/ai-tier';
 
 // ─── Tier Display Config ─────────────────────────────────────────────────────
 
@@ -35,20 +35,9 @@ export function AIPlanCard() {
     currentTier,
     dailyUsed,
     dailyLimit,
-    preferredProvider,
     isLoading,
-    saveProviderPreference,
     fetchTierInfo,
   } = useAiTierStore();
-
-  const handleProviderToggle = useCallback(
-    (value: boolean) => {
-      if (!user) return;
-      const newProvider: AiProvider = value ? 'anthropic' : 'openai';
-      saveProviderPreference(user.id, newProvider);
-    },
-    [user, saveProviderPreference]
-  );
 
   const handleUpgrade = useCallback(async () => {
     try {
@@ -108,24 +97,11 @@ export function AIPlanCard() {
         </View>
       )}
 
-      {/* Provider Preference Toggle */}
+      {/* Model + provider are now chosen in the chat model picker. */}
       <View style={styles.preferenceRow}>
-        <Text style={styles.preferenceLabel}>AI Provider</Text>
-        <View style={styles.toggleRow}>
-          <Text style={[styles.toggleLabel, preferredProvider === 'openai' && styles.toggleActive]}>
-            OpenAI
-          </Text>
-          <Switch
-            value={preferredProvider === 'anthropic'}
-            onValueChange={handleProviderToggle}
-            trackColor={{ false: '#374151', true: '#374151' }}
-            thumbColor={preferredProvider === 'anthropic' ? '#14B8A6' : '#9CA3AF'}
-            accessibilityLabel="Toggle AI provider between OpenAI and Anthropic"
-          />
-          <Text style={[styles.toggleLabel, preferredProvider === 'anthropic' && styles.toggleActive]}>
-            Anthropic
-          </Text>
-        </View>
+        <Text style={styles.preferenceHint}>
+          Choose your AI model directly in the chat screen.
+        </Text>
       </View>
 
       {/* Action Button */}
@@ -203,29 +179,13 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   preferenceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: '#374151',
   },
-  preferenceLabel: {
-    fontSize: 14,
-    color: '#D1D5DB',
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  toggleLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  toggleActive: {
-    color: '#14B8A6',
-    fontWeight: '600',
+  preferenceHint: {
+    fontSize: 13,
+    color: '#9CA3AF',
   },
   upgradeButton: {
     backgroundColor: '#14B8A6',

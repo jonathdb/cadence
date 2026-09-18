@@ -1,0 +1,63 @@
+# EAS Build ignore file.
+# When present, EAS uses THIS instead of .gitignore to decide what to upload.
+# So it must mirror .gitignore AND exclude local tooling that breaks the upload.
+
+# --- Mirrors .gitignore ---
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+example
+
+# generated native folders
+/ios
+/android
+
+# IDE
+.idea/
+
+# --- EAS-specific exclusions (not needed to build the app) ---
+
+# Local agent/skills tooling. These contain symlinks (e.g. .kiro/skills -> .agents/skills)
+# that fail to recreate on Windows during upload (EPERM: operation not permitted, symlink).
+.agents/
+.kiro/
+.claude/
+.github/
+.vscode/
+docs/
+tests/

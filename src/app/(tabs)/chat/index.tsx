@@ -25,12 +25,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatUsageIndicator, RateLimitReachedMessage } from '@/components/ChatUsageIndicator';
+import { ModelPicker } from '@/components/ModelPicker';
 import { PlaylistCardList } from '@/components/PlaylistCardList';
 import { ProgramProposal } from '@/components/ProgramProposal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Icon } from '@/components/ui/Icon';
-import { Radii, Spacing } from '@/constants/theme';
+import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAiTierStore } from '@/store/ai-tier';
@@ -79,6 +80,19 @@ const RETRIEVAL_TOOLS = new Set([
   'spotify_create_playlist',
   'spotify_modify_playlist',
 ]);
+
+/**
+ * Build the { provider, model? } fields for an agent-chat request from the
+ * user's current model choice. Provider is always sent; model only when the
+ * user has explicitly chosen one (server falls back to the tier default
+ * otherwise). Reads the store imperatively so it works from any callback.
+ */
+function buildModelSelection(): { provider: 'openai' | 'anthropic'; model?: string } {
+  const { preferredProvider, preferredModel } = useAiTierStore.getState();
+  return preferredModel
+    ? { provider: preferredProvider, model: preferredModel }
+    : { provider: preferredProvider };
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -215,7 +229,7 @@ export default function ChatScreen() {
         body: JSON.stringify({
           message: text,
           conversation: conversationContext,
-          provider: 'anthropic',
+          ...buildModelSelection(),
         }),
       });
 
@@ -445,7 +459,7 @@ export default function ChatScreen() {
         body: JSON.stringify({
           message: '',
           conversation: followUpConversation,
-          provider: 'anthropic',
+          ...buildModelSelection(),
         }),
       });
 
@@ -1074,10 +1088,13 @@ export default function ChatScreen() {
             {
               borderTopColor: theme.border,
               backgroundColor: theme.background,
-              paddingBottom: Spacing.two + insets.bottom,
+              paddingBottom: TabBarClearance + insets.bottom,
             },
           ]}
         >
+          <View style={styles.pickerRow}>
+            <ModelPicker />
+          </View>
           <View
             style={[
               styles.inputDock,
@@ -1173,6 +1190,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingTop: Spacing.two,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  pickerRow: {
+    marginBottom: Spacing.one + 2,
   },
   inputDock: {
     flexDirection: 'row',

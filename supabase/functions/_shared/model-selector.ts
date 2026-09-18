@@ -30,11 +30,11 @@ export const MODEL_MAP: Record<AiTier, Record<'openai' | 'anthropic', string>> =
   },
   pro: {
     openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4-20250514',
+    anthropic: 'claude-sonnet-4-5-20250929',
   },
   byok: {
     openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4-20250514',
+    anthropic: 'claude-sonnet-4-5-20250929',
   },
 };
 

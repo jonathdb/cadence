@@ -371,6 +371,39 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# ============================================================================
+# Edge Function auth
+# ----------------------------------------------------------------------------
+# These functions authenticate the caller themselves inside the function body
+# (via supabase.auth.getUser(token), or a shared-secret check for the webhook),
+# so gateway-level JWT verification is disabled. This also lets the local
+# `supabase start` runtime serve them without the standalone
+# `functions serve --no-verify-jwt` process. Auth is NOT weakened — each
+# function still validates the token/secret before doing any work.
+# ============================================================================
+[functions.agent-chat]
+verify_jwt = false
+
+[functions.execute-tool-call]
+verify_jwt = false
+
+[functions.session-insight]
+verify_jwt = false
+
+[functions.list-models]
+verify_jwt = false
+
+[functions.store-api-key]
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false
+
+# RevenueCat calls this from its own servers with a shared-secret Bearer token,
+# not a Supabase JWT, so gateway JWT verification must be off or webhooks 401.
+[functions.revenucat-webhook]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

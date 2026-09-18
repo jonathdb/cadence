@@ -34,6 +34,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_daily_usage: {
+        Row: {
+          message_count: number
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          message_count?: number
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          message_count?: number
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           action_type: string
@@ -782,6 +800,48 @@ export type Database = {
           },
         ]
       }
+      program_templates: {
+        Row: {
+          author_id: string
+          clone_count: number
+          created_at: string
+          description: string
+          id: string
+          is_published: boolean
+          program_snapshot: Json
+          slug: string
+          tags: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          clone_count?: number
+          created_at?: string
+          description?: string
+          id?: string
+          is_published?: boolean
+          program_snapshot: Json
+          slug: string
+          tags?: string[]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          clone_count?: number
+          created_at?: string
+          description?: string
+          id?: string
+          is_published?: boolean
+          program_snapshot?: Json
+          slug?: string
+          tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       programs: {
         Row: {
           created_at: string | null
@@ -947,6 +1007,35 @@ export type Database = {
         }
         Relationships: []
       }
+      template_clones: {
+        Row: {
+          cloned_at: string
+          id: string
+          template_id: string
+          user_id: string
+        }
+        Insert: {
+          cloned_at?: string
+          id?: string
+          template_id: string
+          user_id: string
+        }
+        Update: {
+          cloned_at?: string
+          id?: string
+          template_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_clones_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "program_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_api_keys: {
         Row: {
           created_at: string | null
@@ -1065,6 +1154,8 @@ export type Database = {
           permission_journal_edits: string
           permission_program_edits: string
           permission_spotify_actions: string
+          preferred_ai_provider: string
+          preferred_model: string | null
           rest_timer_auto_start: boolean
           updated_at: string | null
           user_id: string
@@ -1080,6 +1171,8 @@ export type Database = {
           permission_journal_edits?: string
           permission_program_edits?: string
           permission_spotify_actions?: string
+          preferred_ai_provider?: string
+          preferred_model?: string | null
           rest_timer_auto_start?: boolean
           updated_at?: string | null
           user_id: string
@@ -1095,6 +1188,8 @@ export type Database = {
           permission_journal_edits?: string
           permission_program_edits?: string
           permission_spotify_actions?: string
+          preferred_ai_provider?: string
+          preferred_model?: string | null
           rest_timer_auto_start?: boolean
           updated_at?: string | null
           user_id?: string
@@ -1312,6 +1407,10 @@ export type Database = {
             }
             Returns: string
           }
+      clone_template: {
+        Args: { p_template_id: string; p_user_id: string }
+        Returns: string
+      }
       delete_user_api_key: {
         Args: { p_provider: string; p_user_id: string }
         Returns: undefined
@@ -2115,12 +2214,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2144,11 +2243,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2169,11 +2268,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2194,11 +2293,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2211,11 +2310,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

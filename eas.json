@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 15.0.0"
+    "version": ">= 15.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -15,7 +16,9 @@
       "developmentClient": false,
       "channel": "preview",
       "ios": {},
-      "android": {}
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "distribution": "store",
