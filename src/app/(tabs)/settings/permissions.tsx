@@ -14,6 +14,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     ALL_PERMISSION_CATEGORIES,
@@ -49,6 +50,7 @@ const CATEGORY_INFO: Record<PermissionCategory, { label: string; description: st
 export default function PermissionsScreen() {
   const { session } = useAuth();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const [permissions, setPermissions] = useState<Record<PermissionCategory, PermissionMode> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [updatingCategory, setUpdatingCategory] = useState<PermissionCategory | null>(null);
@@ -100,7 +102,7 @@ export default function PermissionsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         <View style={styles.section}>
           <ThemedText type="small" themeColor="textSecondary">
             Control what the Agent can do automatically. When set to &quot;Auto Apply&quot;, the Agent will
