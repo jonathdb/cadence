@@ -8,12 +8,15 @@
  * Requirements: 2.1, 2.2, 2.3, 2.4
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     Pressable,
     ScrollView,
     StyleSheet,
-    View,
+    TextInput,
+    View
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -26,9 +29,35 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
+import { useAuth } from '@/providers/AuthProvider';
+import { deleteSession, updateSession } from '@/services/session-manager';
 import { useCadenceStore } from '@/store';
+import type { LoggedSet } from '@/types/session';
+import { supabase } from '@/utils/supabase';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+/**
+ * Source-agnostic session shape the summary renders from. Populated either
+ * from the local store (native, when the session ran through store actions)
+ * or from a direct Supabase fetch (the program-day logging flow, which writes
+ * straight to Supabase).
+ */
+interface SessionView {
+  id: string;
+  notes: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  sets: {
+    id: string;
+    exerciseId: string;
+    setNumber: number;
+    reps: number;
+    weight: number;
+    isPr: boolean;
+  }[];
+}
 
 interface ExerciseBreakdown {
   exerciseId: string;
@@ -137,20 +166,141 @@ export default function SessionSummaryScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const router = useRouter();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const scrollRef = useRef<ScrollView>(null);
+  const { session: authSession } = useAuth();
+  const updateSessionNotes = useCadenceStore((state) => state.updateSessionNotes);
+  const removeSession = useCadenceStore((state) => state.removeSession);
 
   // State for PR highlight
   const [highlightedSetId, setHighlightedSetId] = useState<string | null>(null);
+
+  // Notes edit state — mirrors the archive-first program delete pattern:
+  // optimistic local update immediately, then a direct Supabase write when
+  // the offline WAL isn't in play (native uses the store action's own WAL
+  // enqueue; this direct write covers web, where WAL is unavailable).
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Track set positions for scroll-to on PR tap
   const setPositionsRef = useRef<Map<string, number>>(new Map());
   // Track exercise section positions (Y offset of each exercise breakdown section)
   const exerciseSectionPositionsRef = useRef<Map<string, number>>(new Map());
 
-  // Find session in store
-  const session = useCadenceStore((state) =>
+  // Find session in store (fast path — populated only when the session was
+  // created through the store's startSession/logSet actions).
+  const storeSession = useCadenceStore((state) =>
     state.recentSessions.find((s) => s.id === sessionId)
   );
+
+  // The program-day logging flow (session/[dayId].tsx) writes the session and
+  // its sets straight to Supabase, NOT through the store, so the store lookup
+  // above misses them. Fetch the session + logged sets from Supabase by id as
+  // the source of truth, and fall back to the store only if the fetch is empty.
+  const [fetchedSession, setFetchedSession] = useState<SessionView | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [fetchedExerciseNames, setFetchedExerciseNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!sessionId) {
+      setIsLoadingSession(false);
+      return;
+    }
+    let cancelled = false;
+
+    async function load() {
+      setIsLoadingSession(true);
+      try {
+        const { data, error } = await supabase
+          .from('sessions')
+          .select('id, notes, started_at, completed_at, logged_sets(*)')
+          .eq('id', sessionId)
+          .is('deleted_at', null)
+          .single();
+
+        if (cancelled) return;
+
+        if (error || !data) {
+          setFetchedSession(null);
+          return;
+        }
+
+        const row = data as unknown as {
+          id: string;
+          notes: string | null;
+          started_at: string;
+          completed_at: string | null;
+          logged_sets: LoggedSet[];
+        };
+
+        const view: SessionView = {
+          id: row.id,
+          notes: row.notes ?? null,
+          startedAt: row.started_at,
+          completedAt: row.completed_at,
+          sets: (row.logged_sets ?? []).map((s) => ({
+            id: s.id,
+            exerciseId: s.exercise_id,
+            setNumber: s.set_number,
+            reps: s.reps,
+            weight: s.weight,
+            isPr: s.is_pr === true,
+          })),
+        };
+        setFetchedSession(view);
+
+        // Resolve exercise names for the sets in this session.
+        const exerciseIds = [...new Set(view.sets.map((s) => s.exerciseId))];
+        if (exerciseIds.length > 0) {
+          const { data: exRows } = await supabase
+            .from('exercises')
+            .select('id, name')
+            .in('id', exerciseIds);
+          if (!cancelled && exRows) {
+            const names: Record<string, string> = {};
+            for (const e of exRows as { id: string; name: string }[]) {
+              names[e.id] = e.name;
+            }
+            setFetchedExerciseNames(names);
+          }
+        }
+      } catch {
+        if (!cancelled) setFetchedSession(null);
+      } finally {
+        if (!cancelled) setIsLoadingSession(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // Unified session view: prefer the store (has richer local state), else the
+  // Supabase fetch. Normalized to a common shape so the summary math below
+  // doesn't care which source it came from.
+  const session: SessionView | null = useMemo(() => {
+    if (storeSession) {
+      return {
+        id: storeSession.id,
+        notes: storeSession.notes ?? null,
+        startedAt: storeSession.startedAt,
+        completedAt: storeSession.completedAt,
+        sets: storeSession.sets.map((s) => ({
+          id: s.id,
+          exerciseId: s.exerciseId,
+          setNumber: s.setNumber,
+          reps: s.reps,
+          weight: s.weight,
+          isPr: s.isPr === true,
+        })),
+      };
+    }
+    return fetchedSession;
+  }, [storeSession, fetchedSession]);
 
   // Compute summary data from the session
   const summaryData = useMemo(() => {
@@ -217,10 +367,13 @@ export default function SessionSummaryScreen() {
       const exercise = exercises.find((e) => e.id === eb.exerciseId);
       return {
         ...eb,
-        exerciseName: exercise?.name ?? `Exercise ${eb.exerciseId.slice(0, 8)}`,
+        exerciseName:
+          exercise?.name ??
+          fetchedExerciseNames[eb.exerciseId] ??
+          `Exercise ${eb.exerciseId.slice(0, 8)}`,
       };
     });
-  }, [summaryData, exercises]);
+  }, [summaryData, exercises, fetchedExerciseNames]);
 
   // Handle PR tap: scroll to the specific set and flash it
   const handlePrTap = useCallback((setId: string, exerciseId: string) => {
@@ -248,6 +401,86 @@ export default function SessionSummaryScreen() {
   const handleBackToSessions = useCallback(() => {
     router.replace('/(tabs)/session');
   }, [router]);
+
+  // ─── Session edit/delete affordances (Requirements 4.1, 4.2, 4.6, 4.7, 4.8) ─
+  // Optimistic-first via the store action (which enqueues a WAL op natively);
+  // on failure, fall back to a direct Supabase write (covers web, where the
+  // WAL is unavailable) and re-throw only if that also fails.
+
+  const startEditingNotes = useCallback(() => {
+    setNotesDraft(session?.notes ?? '');
+    setIsEditingNotes(true);
+  }, [session?.notes]);
+
+  const cancelEditingNotes = useCallback(() => {
+    setIsEditingNotes(false);
+  }, []);
+
+  const saveNotes = useCallback(async () => {
+    if (!sessionId || !authSession?.user.id) return;
+    setIsSavingNotes(true);
+    try {
+      // Authoritative write to Supabase (works regardless of whether the
+      // session is in the local store — the program-day flow writes sessions
+      // straight to the DB, so it usually isn't).
+      await updateSession(supabase, authSession.user.id, sessionId, { notes: notesDraft });
+      // Reconcile local store/fetched state for immediate UI consistency.
+      updateSessionNotes(sessionId, notesDraft);
+      setFetchedSession((prev) => (prev ? { ...prev, notes: notesDraft } : prev));
+      setIsEditingNotes(false);
+    } catch (err) {
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Could not save notes. Please try again.'
+      );
+    } finally {
+      setIsSavingNotes(false);
+    }
+  }, [sessionId, authSession?.user.id, notesDraft, updateSessionNotes]);
+
+  const runDeleteSession = useCallback(async () => {
+    if (!sessionId || !authSession?.user.id) return;
+    setIsDeleting(true);
+    try {
+      // Authoritative soft-delete in Supabase, then reconcile local store.
+      await deleteSession(supabase, authSession.user.id, sessionId);
+      removeSession(sessionId);
+      router.replace('/(tabs)/session');
+    } catch (err) {
+      setIsDeleting(false);
+      Alert.alert(
+        'Delete failed',
+        err instanceof Error
+          ? err.message
+          : 'Could not delete the session. It remains in your history.'
+      );
+    }
+  }, [sessionId, authSession?.user.id, removeSession, router]);
+
+  const handleDeleteSession = useCallback(() => {
+    // Non-destructive framing: logged sets are preserved regardless
+    // (Requirement 4.12), so a single confirmation is sufficient here.
+    Alert.alert(
+      'Delete this session?',
+      'This session will be removed from your history. Your logged sets are kept as a record of past activity.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: runDeleteSession },
+      ]
+    );
+  }, [runDeleteSession]);
+
+  // ─── Loading State ─────────────────────────────────────────────────────────
+  // The session is fetched from Supabase asynchronously; show a spinner until
+  // that resolves so we don't flash "Session Not Found" before it loads.
+
+  if (isLoadingSession && !session) {
+    return (
+      <ThemedView style={styles.centered}>
+        <ActivityIndicator size="large" color={theme.accent} />
+      </ThemedView>
+    );
+  }
 
   // ─── Error State (Req 2.3) ─────────────────────────────────────────────────
 
@@ -283,7 +516,7 @@ export default function SessionSummaryScreen() {
     <ThemedView style={styles.container}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}
         accessibilityLabel="Session summary"
       >
         {/* Header */}
@@ -322,6 +555,71 @@ export default function SessionSummaryScreen() {
               {prCount}
             </ThemedText>
           </View>
+        </View>
+
+        {/* Session notes — edit affordance (Requirements 4.1, 4.2, 4.6) */}
+        <View style={styles.notesSection}>
+          <View style={styles.notesHeader}>
+            <ThemedText type="headlineSmall" accessibilityRole="header">
+              Notes
+            </ThemedText>
+            {!isEditingNotes && (
+              <Pressable
+                onPress={startEditingNotes}
+                accessibilityRole="button"
+                accessibilityLabel={session.notes ? 'Edit session notes' : 'Add session notes'}
+                hitSlop={8}
+              >
+                <ThemedText type="linkPrimary">{session.notes ? 'Edit' : 'Add'}</ThemedText>
+              </Pressable>
+            )}
+          </View>
+
+          {isEditingNotes ? (
+            <View style={styles.notesEditRow}>
+              <TextInput
+                value={notesDraft}
+                onChangeText={setNotesDraft}
+                multiline
+                placeholder="Anything worth remembering about this session"
+                placeholderTextColor={theme.textSecondary}
+                style={[
+                  styles.notesInput,
+                  { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.border },
+                ]}
+                accessibilityLabel="Session notes"
+                autoFocus
+              />
+              <View style={styles.notesActions}>
+                <Pressable
+                  style={[styles.notesActionButton, { backgroundColor: theme.backgroundElement }]}
+                  onPress={cancelEditingNotes}
+                  disabled={isSavingNotes}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel editing notes"
+                >
+                  <ThemedText style={{ color: theme.text, fontWeight: '600' }}>Cancel</ThemedText>
+                </Pressable>
+                <Pressable
+                  style={[styles.notesActionButton, { backgroundColor: theme.accent }]}
+                  onPress={saveNotes}
+                  disabled={isSavingNotes}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save notes"
+                >
+                  {isSavingNotes ? (
+                    <ActivityIndicator size="small" color={theme.accentText} />
+                  ) : (
+                    <ThemedText style={{ color: theme.accentText, fontWeight: '600' }}>Save</ThemedText>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <ThemedText type="bodyMedium" themeColor={session.notes ? 'text' : 'textSecondary'}>
+              {session.notes || 'No notes for this session yet.'}
+            </ThemedText>
+          )}
         </View>
 
         {/* PR Summary Section (tappable PRs) */}
@@ -410,15 +708,30 @@ export default function SessionSummaryScreen() {
           ))}
         </View>
 
-        {/* Done Button */}
-        <Pressable
-          style={[styles.doneButton, { borderColor: theme.border }]}
-          onPress={handleBackToSessions}
-          accessibilityRole="button"
-          accessibilityLabel="Return to session list"
-        >
-          <ThemedText style={[styles.doneButtonText, { color: theme.text }]}>Done</ThemedText>
-        </Pressable>
+        {/* Done + Delete Buttons (Requirements 4.1, 4.6, 4.7, 4.8) */}
+        <View style={styles.footerActions}>
+          <Pressable
+            style={[styles.doneButton, { borderColor: theme.border, flex: 1 }]}
+            onPress={handleBackToSessions}
+            accessibilityRole="button"
+            accessibilityLabel="Return to session list"
+          >
+            <ThemedText style={[styles.doneButtonText, { color: theme.text }]}>Done</ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.deleteSessionButton, { backgroundColor: theme.errorSoft }]}
+            onPress={handleDeleteSession}
+            disabled={isDeleting}
+            accessibilityRole="button"
+            accessibilityLabel="Delete this session"
+          >
+            {isDeleting ? (
+              <ActivityIndicator size="small" color={theme.error} />
+            ) : (
+              <ThemedText style={{ color: theme.error, fontWeight: '600' }}>Delete</ThemedText>
+            )}
+          </Pressable>
+        </View>
       </ScrollView>
     </ThemedView>
   );
@@ -443,7 +756,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.four,
-    paddingBottom: Spacing.six,
     gap: Spacing.four,
   },
   header: {
@@ -543,5 +855,50 @@ const styles = StyleSheet.create({
   doneButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  footerActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  deleteSessionButton: {
+    borderRadius: Radii.medium,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.four,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    minWidth: 88,
+  },
+  notesSection: {
+    gap: Spacing.two,
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notesEditRow: {
+    gap: Spacing.two,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderRadius: Radii.medium,
+    paddingHorizontal: Spacing.twoHalf,
+    paddingVertical: Spacing.two,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  notesActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  notesActionButton: {
+    flex: 1,
+    borderRadius: Radii.medium,
+    paddingVertical: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
 });

@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     connectSpotify,
@@ -22,6 +23,7 @@ import {
 export default function SpotifyScreen() {
   const { session } = useAuth();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const [isConnected, setIsConnected] = useState(false);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [scopes, setScopes] = useState<string[] | null>(null);
@@ -122,7 +124,7 @@ export default function SpotifyScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         <View style={styles.section}>
           <ThemedText type="small" themeColor="textSecondary">
             Connect your Spotify account to let the Agent search, create, and modify playlists

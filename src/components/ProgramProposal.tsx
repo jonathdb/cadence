@@ -56,6 +56,14 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
       case 'get_session_history': return 'Fetching Session History';
       case 'get_session_details': return 'Fetching Session Details';
       case 'get_programs': return 'Fetching Programs';
+      case 'get_exercises': return 'Searching Exercise Catalog';
+      case 'session_update': return 'Update Session';
+      case 'session_delete': return 'Delete Session';
+      case 'exercise_instance_add': return 'Add Exercise';
+      case 'exercise_instance_update': return 'Update Exercise';
+      case 'exercise_instance_remove': return 'Remove Exercise';
+      case 'program_archive': return 'Archive Program';
+      case 'program_delete': return 'Delete Program';
       default: return toolCall.name.replace(/_/g, ' ');
     }
   }, [toolCall.name]);
@@ -131,14 +139,97 @@ export function ProgramProposal({ toolCall, onApprove, onReject }: ProgramPropos
         </View>
       )}
 
-      {/* Generic tool call */}
-      {!['program_create', 'program_modify'].includes(toolCall.name) && parsedArgs && (
+      {/* session_update details */}
+      {toolCall.name === 'session_update' && parsedArgs && (
         <View style={styles.programDetails}>
-          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }} numberOfLines={5}>
-            {JSON.stringify(parsedArgs, null, 2)}
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+            Session {parsedArgs.session_id?.slice(0, 8) ?? 'unknown'}
+          </ThemedText>
+          {parsedArgs.updates &&
+            Object.entries(parsedArgs.updates as Record<string, unknown>).map(([field, value]) => (
+              <ThemedText key={field} style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+                • {field.replace(/_/g, ' ')}: {String(value)}
+              </ThemedText>
+            ))}
+        </View>
+      )}
+
+      {/* session_delete details */}
+      {toolCall.name === 'session_delete' && parsedArgs && (
+        <View style={styles.programDetails}>
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+            Session {parsedArgs.session_id?.slice(0, 8) ?? 'unknown'} will be removed from your history.
+            Logged sets are kept.
           </ThemedText>
         </View>
       )}
+
+      {/* exercise_instance_add details */}
+      {toolCall.name === 'exercise_instance_add' && parsedArgs && (
+        <View style={styles.programDetails}>
+          <ThemedText style={{ fontWeight: '600', fontSize: 14, color: theme.text }}>
+            {parsedArgs.exercise_name ?? 'Unknown exercise'} — Day {parsedArgs.day_number}
+          </ThemedText>
+          {parsedArgs.updates && (
+            <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+              {parsedArgs.updates.target_sets ?? '?'}×{parsedArgs.updates.target_reps ?? '?'}
+              {parsedArgs.updates.target_weight ? ` @ ${parsedArgs.updates.target_weight}kg` : ''}
+            </ThemedText>
+          )}
+        </View>
+      )}
+
+      {/* exercise_instance_update details */}
+      {toolCall.name === 'exercise_instance_update' && parsedArgs && (
+        <View style={styles.programDetails}>
+          {parsedArgs.updates &&
+            Object.entries(parsedArgs.updates as Record<string, unknown>).map(([field, value]) => (
+              <ThemedText key={field} style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+                • {field.replace(/_/g, ' ')}: {String(value)}
+              </ThemedText>
+            ))}
+        </View>
+      )}
+
+      {/* exercise_instance_remove details */}
+      {toolCall.name === 'exercise_instance_remove' && parsedArgs && (
+        <View style={styles.programDetails}>
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+            Removes one exercise from a program day. Logged history for it is unaffected.
+          </ThemedText>
+        </View>
+      )}
+
+      {/* program_archive / program_delete details */}
+      {(toolCall.name === 'program_archive' || toolCall.name === 'program_delete') && parsedArgs && (
+        <View style={styles.programDetails}>
+          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }}>
+            {toolCall.name === 'program_delete' && parsedArgs.mode === 'purge'
+              ? 'This permanently deletes the program. Logged history is preserved.'
+              : 'The program will be archived — non-destructive and reversible.'}
+          </ThemedText>
+        </View>
+      )}
+
+      {/* Generic tool call (fallback for anything without bespoke rendering) */}
+      {![
+        'program_create',
+        'program_modify',
+        'session_update',
+        'session_delete',
+        'exercise_instance_add',
+        'exercise_instance_update',
+        'exercise_instance_remove',
+        'program_archive',
+        'program_delete',
+      ].includes(toolCall.name) &&
+        parsedArgs && (
+          <View style={styles.programDetails}>
+            <ThemedText style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18 }} numberOfLines={5}>
+              {JSON.stringify(parsedArgs, null, 2)}
+            </ThemedText>
+          </View>
+        )}
 
       {/* Approve/Reject buttons */}
       <View style={styles.buttonRow}>

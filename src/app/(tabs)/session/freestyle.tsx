@@ -25,6 +25,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { MAX_EXERCISES_PER_SESSION } from '@/lib/validation';
 import * as haptics from '@/services/haptics';
 import { triggerSessionInsight } from '@/services/session-insight';
@@ -53,6 +54,7 @@ interface SetFormState {
 export default function FreestyleSessionScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
 
   // Store access
   const startSession = useCadenceStore((s) => s.startSession);
@@ -281,7 +283,7 @@ export default function FreestyleSessionScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         {/* Session Header */}
         <View style={styles.sessionHeader}>
           <ThemedText type="headlineMedium">Freestyle Session</ThemedText>
@@ -693,7 +695,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.four,
     gap: Spacing.three,
-    paddingBottom: 100,
   },
   sessionHeader: {
     gap: Spacing.one,

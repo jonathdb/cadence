@@ -8,6 +8,12 @@ export interface Program {
   user_id: string;
   name: string;
   status: ProgramStatus;
+  /**
+   * Declutters the archived list without destroying the program (Req 3).
+   * Defaults to false; hidden programs are excluded from `listPrograms`
+   * unless `includeHidden` is passed.
+   */
+  hidden: boolean;
   program_days: ProgramDay[];
   modification_history: ModificationEntry[];
   created_at: string;

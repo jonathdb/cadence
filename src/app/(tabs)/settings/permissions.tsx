@@ -40,6 +40,10 @@ const CATEGORY_INFO: Record<PermissionCategory, { label: string; description: st
     label: 'Health Data Access',
     description: 'Allow the Agent to access your health data summaries automatically',
   },
+  session_edits: {
+    label: 'Session Edits',
+    description: 'Allow the Agent to update or delete your logged workout sessions without asking first',
+  },
 };
 
 export default function PermissionsScreen() {

@@ -37,11 +37,13 @@ export interface LoggedSetRowData {
 interface LoggedSetRowProps {
   set: LoggedSetRowData;
   exerciseName: string;
+  /** Hide the weight column for bodyweight exercises (weight is always 0). */
+  hideWeight?: boolean;
   onEdit: (set: LoggedSetRowData) => void;
   onDelete: (set: LoggedSetRowData) => void;
 }
 
-export function LoggedSetRow({ set, exerciseName, onEdit, onDelete }: LoggedSetRowProps) {
+export function LoggedSetRow({ set, exerciseName, hideWeight = false, onEdit, onDelete }: LoggedSetRowProps) {
   const theme = useTheme();
   const swipeableRef = useRef<Swipeable>(null);
 
@@ -84,7 +86,7 @@ export function LoggedSetRow({ set, exerciseName, onEdit, onDelete }: LoggedSetR
           style={[styles.row, { backgroundColor: set.isPr ? theme.prBackground : 'transparent' }]}
           onPress={() => onEdit(set)}
           accessibilityRole="button"
-          accessibilityLabel={`Set ${set.setNumber}: ${set.reps} reps at ${set.weight}kg${set.rpe ? `, RPE ${set.rpe}` : ''}${set.isPr ? ', personal record' : ''}. Tap to edit.`}
+          accessibilityLabel={`Set ${set.setNumber}: ${set.reps} reps${hideWeight ? '' : ` at ${set.weight}kg`}${set.rpe ? `, RPE ${set.rpe}` : ''}${set.isPr ? ', personal record' : ''}. Tap to edit.`}
           accessibilityHint="Double tap to edit this set"
         >
           <ThemedText style={[styles.cell, { color: theme.textSecondary }]}>
@@ -93,9 +95,11 @@ export function LoggedSetRow({ set, exerciseName, onEdit, onDelete }: LoggedSetR
           <ThemedText style={[styles.cell, { color: theme.text }]}>
             {set.reps}
           </ThemedText>
-          <ThemedText style={[styles.cell, { color: theme.text }]}>
-            {set.weight}kg
-          </ThemedText>
+          {!hideWeight && (
+            <ThemedText style={[styles.cell, { color: theme.text }]}>
+              {set.weight}kg
+            </ThemedText>
+          )}
           <ThemedText style={[styles.cell, { color: theme.text }]}>
             {set.rpe ?? '—'}
           </ThemedText>

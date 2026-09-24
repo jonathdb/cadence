@@ -3,7 +3,12 @@
  * Controls what the Agent can do automatically vs. requiring user approval.
  */
 
-export type PermissionCategory = 'program_edits' | 'journal_edits' | 'spotify_actions' | 'health_access';
+export type PermissionCategory =
+  | 'program_edits'
+  | 'journal_edits'
+  | 'spotify_actions'
+  | 'health_access'
+  | 'session_edits';
 
 export type PermissionMode = 'approval_required' | 'auto_apply';
 

@@ -28,6 +28,7 @@ import { UndoToast } from '@/components/UndoToast';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useAuth } from '@/providers/AuthProvider';
 import {
     AutoFillSource,
     getAutoFillValues,
@@ -35,6 +36,7 @@ import {
 } from '@/services/auto-fill';
 import * as haptics from '@/services/haptics';
 import { detectPR, ExerciseHistory, PRResult } from '@/services/pr-detection';
+import { removeProgramDayItem, updateProgramDayItem } from '@/services/program-day-item-manager';
 import { triggerSessionInsight } from '@/services/session-insight';
 import {
     startTimer,
@@ -52,6 +54,33 @@ interface ExerciseData {
   id: string;
   name: string;
   primary_muscle_group: string;
+  category: string | null;
+  equipment: string | null;
+  force: string | null;
+}
+
+/**
+ * How an exercise is logged, derived from its catalog metadata:
+ *  - 'cardio'     → distance + duration (running, rowing, ...). category = 'cardio'.
+ *  - 'timed'      → a single duration in seconds, no reps/weight (planks,
+ *                   wall sits, stretches). force = 'static'.
+ *  - 'bodyweight' → reps only, no external weight (pushups, pull-ups, ...).
+ *                   equipment = 'bodyweight' (and not static/cardio).
+ *  - 'weighted'   → reps + weight (the default for barbell/dumbbell/machine work).
+ */
+type LoggingMode = 'cardio' | 'timed' | 'bodyweight' | 'weighted';
+
+function getLoggingMode(exercise: ExerciseData | null): LoggingMode {
+  if (!exercise) return 'weighted';
+  if (exercise.category === 'cardio') return 'cardio';
+  if (exercise.force === 'static') return 'timed';
+  if (exercise.equipment === 'bodyweight') return 'bodyweight';
+  return 'weighted';
+}
+
+/** True when an exercise is logged by distance + duration (running, etc.). */
+function isCardio(exercise: ExerciseData | null): boolean {
+  return getLoggingMode(exercise) === 'cardio';
 }
 
 interface DayItemData {
@@ -87,6 +116,10 @@ interface SetEntry {
   is_pr: boolean;
   pr_type: string | null;
   isManualOverride: boolean;
+  /** Cardio only: distance covered, in meters. */
+  distanceMeters?: number | null;
+  /** Cardio only: duration, in seconds. */
+  durationSeconds?: number | null;
 }
 
 interface SetFormState {
@@ -94,6 +127,12 @@ interface SetFormState {
   weight: string;
   rpe: string;
   notes: string;
+  /** Cardio only: distance in km, as entered. */
+  distanceKm: string;
+  /** Cardio only: duration in minutes, as entered. */
+  durationMin: string;
+  /** Timed/static only: hold duration in seconds, as entered. */
+  durationSec: string;
 }
 
 // --- Timer Display Component ---
@@ -136,6 +175,97 @@ function TimerDisplay({ timerState }: { timerState: TimerState }) {
   );
 }
 
+// --- Cardio Set Row ---
+
+/** Format a duration in seconds as mm:ss. */
+function formatDuration(totalSeconds: number): string {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = Math.round(totalSeconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/** Render a single logged cardio set: number, distance, duration, derived pace. */
+function CardioSetRow({
+  set,
+  theme,
+}: {
+  set: SetEntry;
+  theme: ReturnType<typeof useTheme>;
+}) {
+  const distanceMeters = set.distanceMeters ?? null;
+  const durationSeconds = set.durationSeconds ?? null;
+
+  const distanceLabel =
+    distanceMeters != null && distanceMeters > 0
+      ? `${(distanceMeters / 1000).toFixed(2)} km`
+      : '—';
+
+  const durationLabel =
+    durationSeconds != null && durationSeconds > 0
+      ? formatDuration(durationSeconds)
+      : '—';
+
+  // Pace = minutes per km, only meaningful when both are present.
+  let paceLabel = '—';
+  if (
+    distanceMeters != null &&
+    distanceMeters > 0 &&
+    durationSeconds != null &&
+    durationSeconds > 0
+  ) {
+    const distanceKm = distanceMeters / 1000;
+    const paceMinPerKm = durationSeconds / 60 / distanceKm;
+    const paceMin = Math.floor(paceMinPerKm);
+    const paceSec = Math.round((paceMinPerKm - paceMin) * 60);
+    paceLabel = `${paceMin}:${paceSec.toString().padStart(2, '0')}/km`;
+  }
+
+  return (
+    <View style={styles.cardioSetRow}>
+      <ThemedText style={[styles.cardioSetCell, { color: theme.textSecondary }]}>
+        {set.set_number}
+      </ThemedText>
+      <ThemedText style={[styles.cardioSetCell, { color: theme.text }]}>
+        {distanceLabel}
+      </ThemedText>
+      <ThemedText style={[styles.cardioSetCell, { color: theme.text }]}>
+        {durationLabel}
+      </ThemedText>
+      <ThemedText style={[styles.cardioSetCell, { color: theme.textSecondary }]}>
+        {paceLabel}
+      </ThemedText>
+    </View>
+  );
+}
+
+// --- Timed Set Row ---
+
+/** Render a single logged timed/static set: set number + hold duration (mm:ss). */
+function TimedSetRow({
+  set,
+  theme,
+}: {
+  set: SetEntry;
+  theme: ReturnType<typeof useTheme>;
+}) {
+  const durationSeconds = set.durationSeconds ?? null;
+  const durationLabel =
+    durationSeconds != null && durationSeconds > 0
+      ? formatDuration(durationSeconds)
+      : '—';
+
+  return (
+    <View style={styles.cardioSetRow}>
+      <ThemedText style={[styles.cardioSetCell, { color: theme.textSecondary }]}>
+        {set.set_number}
+      </ThemedText>
+      <ThemedText style={[styles.cardioSetCell, { color: theme.text }]}>
+        {durationLabel}
+      </ThemedText>
+    </View>
+  );
+}
+
 // --- Main Screen Component ---
 
 export default function SessionLoggingScreen() {
@@ -157,6 +287,9 @@ export default function SessionLoggingScreen() {
 
   // Form state for the "add set" input per exercise
   const [formStates, setFormStates] = useState<Record<string, SetFormState>>({});
+  // Per-exercise inline validation error (web-safe — Alert.alert is a no-op on
+  // web, so failed validation is surfaced inline under the form instead).
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Auto-fill initial values per exercise
   const [autoFillValues, setAutoFillValues] = useState<Record<string, AutoFillSource>>({});
@@ -189,6 +322,16 @@ export default function SessionLoggingScreen() {
     exerciseName: string;
   }>({ visible: false, deletedSet: null, exerciseId: '', exerciseName: '' });
 
+  // Exercise instance edit state (Requirements 4.3, 4.4, 4.6, 4.7, 4.8) — the
+  // planned target_sets/target_reps for a program_day_items row, distinct
+  // from the per-set logging above. Editing here never touches the shared
+  // catalog exercise (item.exercises).
+  const { session: authSession } = useAuth();
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemEditDraft, setItemEditDraft] = useState({ targetSets: '', targetReps: '' });
+  const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
+  const [removingItemId, setRemovingItemId] = useState<string | null>(null);
+
   // --- Data fetching ---
 
   const fetchDayData = useCallback(async () => {
@@ -212,7 +355,7 @@ export default function SessionLoggingScreen() {
             target_rpe,
             timer_config,
             notes,
-            exercises (id, name, primary_muscle_group)
+            exercises (id, name, primary_muscle_group, category, equipment, force)
           )
         `)
         .eq('id', dayId)
@@ -369,6 +512,9 @@ export default function SessionLoggingScreen() {
         weight: fill.weight.toString(),
         rpe: fill.rpe?.toString() ?? '',
         notes: '',
+        distanceKm: '',
+        durationMin: '',
+        durationSec: '',
       };
     }
 
@@ -410,14 +556,261 @@ export default function SessionLoggingScreen() {
       const form = formStates[exerciseId];
       if (!form) return;
 
+      const dayItem = day?.program_day_items.find((i) => i.exercise_id === exerciseId);
+      const mode = getLoggingMode(dayItem?.exercises ?? null);
+
+      const existingSets = loggedSets[exerciseId] || [];
+      const setNumber = existingSets.length + 1;
+
+      // ── Timed/static path: duration in seconds only, no reps/weight/PR ──────
+      if (mode === 'timed') {
+        const durationSeconds = parseInt(form.durationSec, 10) || 0;
+
+        if (durationSeconds <= 0) {
+          setFormErrors((prev) => ({
+            ...prev,
+            [exerciseId]: 'Enter a hold duration in seconds greater than zero.',
+          }));
+          return;
+        }
+        setFormErrors((prev) => ({ ...prev, [exerciseId]: '' }));
+
+        const newSet: SetEntry = {
+          id: `${exerciseId}-set-${setNumber}`,
+          exercise_id: exerciseId,
+          set_number: setNumber,
+          reps: 0,
+          weight: 0,
+          rpe: undefined,
+          notes: form.notes,
+          is_pr: false,
+          pr_type: null,
+          isManualOverride: false,
+          durationSeconds,
+        };
+
+        setLoggedSets((prev) => ({ ...prev, [exerciseId]: [...existingSets, newSet] }));
+        haptics.setLogged();
+
+        setFormStates((prev) => ({
+          ...prev,
+          [exerciseId]: { ...prev[exerciseId], durationSec: '', notes: '' },
+        }));
+
+        if (sessionId) {
+          supabase
+            .from('logged_sets')
+            .insert({
+              session_id: sessionId,
+              exercise_id: exerciseId,
+              set_number: setNumber,
+              reps: 0,
+              weight: 0,
+              actual_duration_seconds: durationSeconds,
+              notes: form.notes || null,
+              is_pr: false,
+              logged_at: new Date().toISOString(),
+            } as never)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Failed to persist timed set:', error.message);
+              }
+            });
+        }
+
+        return;
+      }
+
+      // ── Bodyweight path: reps only, no external weight ──────────────────────
+      if (mode === 'bodyweight') {
+        const reps = parseInt(form.reps, 10) || 0;
+        const rpe = form.rpe ? parseFloat(form.rpe) : undefined;
+
+        if (reps <= 0) {
+          setFormErrors((prev) => ({
+            ...prev,
+            [exerciseId]: 'Reps must be greater than zero.',
+          }));
+          return;
+        }
+        setFormErrors((prev) => ({ ...prev, [exerciseId]: '' }));
+
+        // PR detection still applies to bodyweight reps (weight is 0, so rep PRs).
+        const history = exerciseHistories[exerciseId] || {
+          exercise_id: exerciseId,
+          sets: [],
+        };
+        const prResult = detectPR({ reps, weight: 0 }, history);
+
+        const newSet: SetEntry = {
+          id: `${exerciseId}-set-${setNumber}`,
+          exercise_id: exerciseId,
+          set_number: setNumber,
+          reps,
+          weight: 0,
+          rpe,
+          notes: form.notes,
+          is_pr: prResult.is_pr,
+          pr_type: prResult.pr_type,
+          isManualOverride: false,
+        };
+
+        const updatedSets = [...existingSets, newSet];
+        setLoggedSets((prev) => ({ ...prev, [exerciseId]: updatedSets }));
+
+        if (prResult.is_pr) {
+          setPrResults((prev) => ({
+            ...prev,
+            [`${exerciseId}-${setNumber}`]: prResult,
+          }));
+          haptics.prAchieved();
+        }
+        haptics.setLogged();
+
+        setExerciseHistories((prev) => ({
+          ...prev,
+          [exerciseId]: {
+            exercise_id: exerciseId,
+            sets: [...(prev[exerciseId]?.sets || []), { reps, weight: 0 }],
+          },
+        }));
+
+        // Intra-session fill for the next set (reps only).
+        const setsForFill = updatedSets.map((s) => ({
+          reps: s.reps,
+          weight: s.weight,
+          rpe: s.rpe,
+          isManualOverride: s.isManualOverride,
+        }));
+        const intraFill = getIntraSessionFill(setsForFill);
+        if (intraFill) {
+          setFormStates((prev) => ({
+            ...prev,
+            [exerciseId]: {
+              ...prev[exerciseId],
+              reps: intraFill.reps.toString(),
+              rpe: intraFill.rpe?.toString() ?? '',
+              notes: '',
+            },
+          }));
+        }
+
+        if (sessionId) {
+          supabase
+            .from('logged_sets')
+            .insert({
+              session_id: sessionId,
+              exercise_id: exerciseId,
+              set_number: setNumber,
+              reps,
+              weight: 0,
+              rpe,
+              notes: form.notes || null,
+              is_pr: prResult.is_pr,
+              pr_type: prResult.pr_type || null,
+              logged_at: new Date().toISOString(),
+            } as never)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Failed to persist bodyweight set:', error.message);
+              }
+            });
+        }
+
+        // Auto-start rest timer if configured.
+        if (userSettings.rest_timer_auto_start && day) {
+          const di = day.program_day_items.find((i) => i.exercise_id === exerciseId);
+          if (
+            di?.timer_config &&
+            di.timer_config.type === 'rest' &&
+            (di.timer_config.rest_seconds ?? 0) > 0
+          ) {
+            handleStartTimer(exerciseId, di.timer_config);
+          }
+        }
+
+        return;
+      }
+
+      // ── Cardio path: distance + duration, no reps/weight/PR ─────────────────
+      if (mode === 'cardio') {
+        const distanceKm = parseFloat(form.distanceKm) || 0;
+        const durationMin = parseFloat(form.durationMin) || 0;
+
+        if (distanceKm <= 0 && durationMin <= 0) {
+          setFormErrors((prev) => ({
+            ...prev,
+            [exerciseId]: 'Enter a distance and/or a duration greater than zero.',
+          }));
+          return;
+        }
+        setFormErrors((prev) => ({ ...prev, [exerciseId]: '' }));
+
+        const distanceMeters = distanceKm > 0 ? Math.round(distanceKm * 1000) : null;
+        const durationSeconds = durationMin > 0 ? Math.round(durationMin * 60) : null;
+
+        const newSet: SetEntry = {
+          id: `${exerciseId}-set-${setNumber}`,
+          exercise_id: exerciseId,
+          set_number: setNumber,
+          reps: 0,
+          weight: 0,
+          rpe: undefined,
+          notes: form.notes,
+          is_pr: false,
+          pr_type: null,
+          isManualOverride: false,
+          distanceMeters,
+          durationSeconds,
+        };
+
+        setLoggedSets((prev) => ({ ...prev, [exerciseId]: [...existingSets, newSet] }));
+        haptics.setLogged();
+
+        // Reset the entry fields for the next interval (keep any notes cleared).
+        setFormStates((prev) => ({
+          ...prev,
+          [exerciseId]: { ...prev[exerciseId], distanceKm: '', durationMin: '', notes: '' },
+        }));
+
+        if (sessionId) {
+          supabase
+            .from('logged_sets')
+            .insert({
+              session_id: sessionId,
+              exercise_id: exerciseId,
+              set_number: setNumber,
+              reps: 0,
+              weight: 0,
+              distance_meters: distanceMeters,
+              actual_duration_seconds: durationSeconds,
+              notes: form.notes || null,
+              is_pr: false,
+              logged_at: new Date().toISOString(),
+            } as never)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Failed to persist cardio set:', error.message);
+              }
+            });
+        }
+
+        return;
+      }
+
+      // ── Strength path: reps + weight, with PR detection ─────────────────────
       const reps = parseInt(form.reps, 10) || 0;
       const weight = parseFloat(form.weight) || 0;
       const rpe = form.rpe ? parseFloat(form.rpe) : undefined;
 
       if (reps <= 0 || weight <= 0) {
-        Alert.alert('Invalid Set', 'Reps and weight must be greater than zero.');
+        setFormErrors((prev) => ({
+          ...prev,
+          [exerciseId]: 'Reps and weight must be greater than zero.',
+        }));
         return;
       }
+      setFormErrors((prev) => ({ ...prev, [exerciseId]: '' }));
 
       // Check for PR
       const history = exerciseHistories[exerciseId] || {
@@ -427,8 +820,6 @@ export default function SessionLoggingScreen() {
       const prResult = detectPR({ reps, weight }, history);
 
       // Create the set entry
-      const existingSets = loggedSets[exerciseId] || [];
-      const setNumber = existingSets.length + 1;
       const newSet: SetEntry = {
         id: `${exerciseId}-set-${setNumber}`,
         exercise_id: exerciseId,
@@ -481,6 +872,7 @@ export default function SessionLoggingScreen() {
         setFormStates((prev) => ({
           ...prev,
           [exerciseId]: {
+            ...prev[exerciseId],
             reps: intraFill.reps.toString(),
             weight: intraFill.weight.toString(),
             rpe: intraFill.rpe?.toString() ?? '',
@@ -821,6 +1213,104 @@ export default function SessionLoggingScreen() {
     }
   }, [sessionId, sessionStartedAt, router]);
 
+  // --- Exercise instance edit/remove handlers (Requirements 4.3, 4.4, 4.6, 4.7, 4.8) ---
+
+  const startEditingItem = useCallback((item: DayItemData) => {
+    setItemEditDraft({
+      targetSets: String(item.target_sets),
+      targetReps: item.target_reps,
+    });
+    setEditingItemId(item.id);
+  }, []);
+
+  const cancelEditingItem = useCallback(() => {
+    setEditingItemId(null);
+  }, []);
+
+  const saveItemEdit = useCallback(async () => {
+    if (!editingItemId || !authSession?.user.id) return;
+
+    const targetSets = parseInt(itemEditDraft.targetSets, 10);
+    if (!targetSets || targetSets <= 0) {
+      Alert.alert('Invalid Target', 'Target sets must be a positive number.');
+      return;
+    }
+    if (!itemEditDraft.targetReps.trim()) {
+      Alert.alert('Invalid Target', 'Target reps is required.');
+      return;
+    }
+
+    setIsSavingItemEdit(true);
+    try {
+      await updateProgramDayItem(supabase, authSession.user.id, editingItemId, {
+        target_sets: targetSets,
+        target_reps: itemEditDraft.targetReps.trim(),
+      });
+
+      // Reflect the change locally without a full re-fetch.
+      setDay((prev) =>
+        prev
+          ? {
+              ...prev,
+              program_day_items: prev.program_day_items.map((i) =>
+                i.id === editingItemId
+                  ? { ...i, target_sets: targetSets, target_reps: itemEditDraft.targetReps.trim() }
+                  : i
+              ),
+            }
+          : prev
+      );
+
+      setEditingItemId(null);
+    } catch (err) {
+      Alert.alert(
+        'Save failed',
+        err instanceof Error ? err.message : 'Could not update this exercise. Please try again.'
+      );
+    } finally {
+      setIsSavingItemEdit(false);
+    }
+  }, [editingItemId, authSession?.user.id, itemEditDraft]);
+
+  const runRemoveItem = useCallback(
+    async (itemId: string) => {
+      if (!authSession?.user.id) return;
+      setRemovingItemId(itemId);
+      try {
+        await removeProgramDayItem(supabase, authSession.user.id, itemId);
+        setDay((prev) =>
+          prev
+            ? { ...prev, program_day_items: prev.program_day_items.filter((i) => i.id !== itemId) }
+            : prev
+        );
+      } catch (err) {
+        Alert.alert(
+          'Remove failed',
+          err instanceof Error
+            ? err.message
+            : 'Could not remove this exercise. It remains in today\u2019s plan.'
+        );
+      } finally {
+        setRemovingItemId(null);
+      }
+    },
+    [authSession?.user.id]
+  );
+
+  const handleRemoveItem = useCallback(
+    (item: DayItemData) => {
+      Alert.alert(
+        `Remove ${item.exercises?.name ?? 'this exercise'}?`,
+        'This removes it from today\u2019s plan. Any sets already logged for it are kept.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Remove', style: 'destructive', onPress: () => runRemoveItem(item.id) },
+        ]
+      );
+    },
+    [runRemoveItem]
+  );
+
   // --- Render ---
 
   const theme = useTheme();
@@ -895,7 +1385,13 @@ export default function SessionLoggingScreen() {
             weight: '0',
             rpe: '',
             notes: '',
+            distanceKm: '',
+            durationMin: '',
+            durationSec: '',
           };
+          const mode = getLoggingMode(item.exercises);
+          const cardio = mode === 'cardio';
+          const formError = formErrors[exerciseId];
           const hasTimer =
             item.timer_config && item.timer_config.type !== 'none';
           const isTimerActive = activeTimerExercise === exerciseId;
@@ -913,23 +1409,126 @@ export default function SessionLoggingScreen() {
                   <ThemedText style={[styles.exerciseName, { color: theme.text }]}>
                     {item.exercises.name}
                   </ThemedText>
-                  <ThemedText style={[styles.targetInfo, { color: theme.textSecondary }]}>
-                    Target: {item.target_sets}×{item.target_reps}
-                    {item.target_weight
-                      ? ` @ ${item.target_weight}kg`
-                      : ''}
-                    {item.target_rpe ? ` RPE ${item.target_rpe}` : ''}
-                  </ThemedText>
+                  {editingItemId === item.id ? (
+                    <View style={styles.itemEditRow}>
+                      <TextInput
+                        value={itemEditDraft.targetSets}
+                        onChangeText={(v) => setItemEditDraft((d) => ({ ...d, targetSets: v }))}
+                        keyboardType="numeric"
+                        placeholder="Sets"
+                        placeholderTextColor={theme.textTertiary}
+                        style={[styles.itemEditInput, { color: theme.text, borderColor: theme.border }]}
+                        accessibilityLabel={`Target sets for ${item.exercises.name}`}
+                      />
+                      <ThemedText style={{ color: theme.textSecondary }}>×</ThemedText>
+                      <TextInput
+                        value={itemEditDraft.targetReps}
+                        onChangeText={(v) => setItemEditDraft((d) => ({ ...d, targetReps: v }))}
+                        placeholder="Reps"
+                        placeholderTextColor={theme.textTertiary}
+                        style={[styles.itemEditInput, { color: theme.text, borderColor: theme.border }]}
+                        accessibilityLabel={`Target reps for ${item.exercises.name}`}
+                      />
+                      <Pressable
+                        onPress={saveItemEdit}
+                        disabled={isSavingItemEdit}
+                        accessibilityRole="button"
+                        accessibilityLabel="Save target"
+                        style={[styles.itemEditSaveBtn, { backgroundColor: theme.accent }]}
+                      >
+                        {isSavingItemEdit ? (
+                          <ActivityIndicator size="small" color={theme.accentText} />
+                        ) : (
+                          <ThemedText style={{ color: theme.accentText, fontSize: 12, fontWeight: '600' }}>
+                            Save
+                          </ThemedText>
+                        )}
+                      </Pressable>
+                      <Pressable
+                        onPress={cancelEditingItem}
+                        disabled={isSavingItemEdit}
+                        accessibilityRole="button"
+                        accessibilityLabel="Cancel editing target"
+                      >
+                        <ThemedText style={{ color: theme.textSecondary, fontSize: 12 }}>Cancel</ThemedText>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <ThemedText style={[styles.targetInfo, { color: theme.textSecondary }]}>
+                      Target: {item.target_sets}×{item.target_reps}
+                      {item.target_weight
+                        ? ` @ ${item.target_weight}kg`
+                        : ''}
+                      {item.target_rpe ? ` RPE ${item.target_rpe}` : ''}
+                    </ThemedText>
+                  )}
                 </View>
+                {editingItemId !== item.id && (
+                  <View style={styles.itemHeaderActions}>
+                    <Pressable
+                      onPress={() => startEditingItem(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit target for ${item.exercises.name}`}
+                      hitSlop={8}
+                      style={styles.itemHeaderActionBtn}
+                    >
+                      <ThemedText style={{ color: theme.accent, fontSize: 12, fontWeight: '600' }}>
+                        Edit
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleRemoveItem(item)}
+                      disabled={removingItemId === item.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${item.exercises.name} from today's plan`}
+                      hitSlop={8}
+                      style={styles.itemHeaderActionBtn}
+                    >
+                      {removingItemId === item.id ? (
+                        <ActivityIndicator size="small" color={theme.error} />
+                      ) : (
+                        <ThemedText style={{ color: theme.error, fontSize: 12, fontWeight: '600' }}>
+                          Remove
+                        </ThemedText>
+                      )}
+                    </Pressable>
+                  </View>
+                )}
               </View>
 
               {/* Logged sets list */}
-              {sets.length > 0 && (
+              {sets.length > 0 && mode === 'cardio' && (
+                <View style={styles.setsListContainer}>
+                  <View style={[styles.setsHeader, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Rep</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Distance</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Duration</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Pace</ThemedText>
+                  </View>
+                  {sets.map((set) => (
+                    <CardioSetRow key={set.id} set={set} theme={theme} />
+                  ))}
+                </View>
+              )}
+              {sets.length > 0 && mode === 'timed' && (
+                <View style={styles.setsListContainer}>
+                  <View style={[styles.setsHeader, { borderBottomColor: theme.border }]}>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Set</ThemedText>
+                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Duration</ThemedText>
+                  </View>
+                  {sets.map((set) => (
+                    <TimedSetRow key={set.id} set={set} theme={theme} />
+                  ))}
+                </View>
+              )}
+              {sets.length > 0 && (mode === 'weighted' || mode === 'bodyweight') && (
                 <View style={styles.setsListContainer}>
                   <View style={[styles.setsHeader, { borderBottomColor: theme.border }]}>
                     <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Set</ThemedText>
                     <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Reps</ThemedText>
-                    <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Weight</ThemedText>
+                    {mode === 'weighted' && (
+                      <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>Weight</ThemedText>
+                    )}
                     <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>RPE</ThemedText>
                     <ThemedText style={[styles.setsHeaderLabel, { color: theme.textSecondary }]}>PR</ThemedText>
                   </View>
@@ -946,6 +1545,7 @@ export default function SessionLoggingScreen() {
                         isPr: set.is_pr,
                       }}
                       exerciseName={item.exercises!.name}
+                      hideWeight={mode === 'bodyweight'}
                       onEdit={(s) => handleEditSet(s, exerciseId, item.exercises!.name)}
                       onDelete={(s) => handleDeleteSet(s, exerciseId, item.exercises!.name)}
                     />
@@ -955,46 +1555,109 @@ export default function SessionLoggingScreen() {
 
               {/* Set input form */}
               <View style={[styles.setForm, { borderTopColor: theme.borderSubtle }]}>
-                <View style={styles.formRow}>
-                  <View style={styles.formField}>
-                    <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Reps</ThemedText>
-                    <TextInput
-                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
-                      value={form.reps}
-                      onChangeText={(v) =>
-                        handleFormChange(exerciseId, 'reps', v)
-                      }
-                      keyboardType="numeric"
-                      accessibilityLabel="Reps"
-                    />
+                {mode === 'cardio' ? (
+                  <View style={styles.formRow}>
+                    <View style={styles.formField}>
+                      <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Distance (km)</ThemedText>
+                      <TextInput
+                        style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                        value={form.distanceKm}
+                        onChangeText={(v) => handleFormChange(exerciseId, 'distanceKm', v)}
+                        keyboardType="numeric"
+                        accessibilityLabel="Distance in kilometers"
+                        placeholder="0"
+                        placeholderTextColor={theme.textTertiary}
+                      />
+                    </View>
+                    <View style={styles.formField}>
+                      <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Duration (min)</ThemedText>
+                      <TextInput
+                        style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                        value={form.durationMin}
+                        onChangeText={(v) => handleFormChange(exerciseId, 'durationMin', v)}
+                        keyboardType="numeric"
+                        accessibilityLabel="Duration in minutes"
+                        placeholder="0"
+                        placeholderTextColor={theme.textTertiary}
+                      />
+                    </View>
                   </View>
-                  <View style={styles.formField}>
-                    <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Weight</ThemedText>
-                    <TextInput
-                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
-                      value={form.weight}
-                      onChangeText={(v) =>
-                        handleFormChange(exerciseId, 'weight', v)
-                      }
-                      keyboardType="numeric"
-                      accessibilityLabel="Weight"
-                    />
+                ) : mode === 'timed' ? (
+                  <View style={styles.formRow}>
+                    <View style={styles.formField}>
+                      <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Duration (sec)</ThemedText>
+                      <TextInput
+                        style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                        value={form.durationSec}
+                        onChangeText={(v) => handleFormChange(exerciseId, 'durationSec', v)}
+                        keyboardType="numeric"
+                        accessibilityLabel="Hold duration in seconds"
+                        placeholder="0"
+                        placeholderTextColor={theme.textTertiary}
+                      />
+                    </View>
+                    <View style={styles.formField}>
+                      <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>RPE</ThemedText>
+                      <TextInput
+                        style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                        value={form.rpe}
+                        onChangeText={(v) => handleFormChange(exerciseId, 'rpe', v)}
+                        keyboardType="numeric"
+                        accessibilityLabel="RPE"
+                        placeholder="—"
+                        placeholderTextColor={theme.textTertiary}
+                      />
+                    </View>
                   </View>
-                  <View style={styles.formField}>
-                    <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>RPE</ThemedText>
-                    <TextInput
-                      style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
-                      value={form.rpe}
-                      onChangeText={(v) =>
-                        handleFormChange(exerciseId, 'rpe', v)
-                      }
-                      keyboardType="numeric"
-                      accessibilityLabel="RPE"
-                      placeholder="—"
-                      placeholderTextColor={theme.textTertiary}
-                    />
+                ) : (
+                  <View style={styles.formRow}>
+                    <View style={styles.formField}>
+                      <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Reps</ThemedText>
+                      <TextInput
+                        style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                        value={form.reps}
+                        onChangeText={(v) =>
+                          handleFormChange(exerciseId, 'reps', v)
+                        }
+                        keyboardType="numeric"
+                        accessibilityLabel="Reps"
+                      />
+                    </View>
+                    {mode === 'weighted' && (
+                      <View style={styles.formField}>
+                        <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>Weight</ThemedText>
+                        <TextInput
+                          style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                          value={form.weight}
+                          onChangeText={(v) =>
+                            handleFormChange(exerciseId, 'weight', v)
+                          }
+                          keyboardType="numeric"
+                          accessibilityLabel="Weight"
+                        />
+                      </View>
+                    )}
+                    <View style={styles.formField}>
+                      <ThemedText style={[styles.formLabel, { color: theme.textSecondary }]}>RPE</ThemedText>
+                      <TextInput
+                        style={[styles.formInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
+                        value={form.rpe}
+                        onChangeText={(v) =>
+                          handleFormChange(exerciseId, 'rpe', v)
+                        }
+                        keyboardType="numeric"
+                        accessibilityLabel="RPE"
+                        placeholder="—"
+                        placeholderTextColor={theme.textTertiary}
+                      />
+                    </View>
                   </View>
-                </View>
+                )}
+                {formError ? (
+                  <ThemedText style={[styles.formErrorText, { color: theme.error }]}>
+                    {formError}
+                  </ThemedText>
+                ) : null}
                 <View style={styles.notesRow}>
                   <TextInput
                     style={[styles.notesInput, { borderColor: theme.border, color: theme.text, backgroundColor: theme.backgroundElement }]}
@@ -1189,9 +1852,57 @@ const styles = StyleSheet.create({
   targetInfo: {
     fontSize: 12,
   },
+  // Exercise instance edit/remove (Requirements 4.3, 4.4, 4.6, 4.7, 4.8)
+  itemHeaderActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  itemHeaderActionBtn: {
+    minHeight: 32,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginTop: 2,
+  },
+  itemEditInput: {
+    borderWidth: 1,
+    borderRadius: Radii.small,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 4,
+    fontSize: 13,
+    minWidth: 48,
+    textAlign: 'center',
+  },
+  itemEditSaveBtn: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 4,
+    borderRadius: Radii.small,
+    minHeight: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   // Logged sets list (header only, rows handled by LoggedSetRow)
   setsListContainer: {
     gap: Spacing.one,
+  },
+  // Cardio logged-set rows (rendered by CardioSetRow)
+  cardioSetRow: {
+    flexDirection: 'row',
+    paddingVertical: Spacing.one,
+  },
+  cardioSetCell: {
+    flex: 1,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  formErrorText: {
+    fontSize: 13,
+    marginTop: Spacing.one,
   },
   setsHeader: {
     flexDirection: 'row',

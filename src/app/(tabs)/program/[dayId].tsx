@@ -19,6 +19,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { supabase } from '@/utils/supabase';
 
 interface ExerciseData {
@@ -44,6 +45,7 @@ interface DayData {
   id: string;
   day_number: number;
   name: string;
+  program_id: string;
   program_day_items: DayItemData[];
   programs: { name: string } | null;
 }
@@ -71,6 +73,7 @@ export default function ProgramDayDetailScreen() {
   const { dayId } = useLocalSearchParams<{ dayId: string }>();
   const router = useRouter();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const [day, setDay] = useState<DayData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -84,6 +87,7 @@ export default function ProgramDayDetailScreen() {
           id,
           day_number,
           name,
+          program_id,
           programs (name),
           program_day_items (
             id,
@@ -146,11 +150,21 @@ export default function ProgramDayDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         <View style={styles.header}>
-          <ThemedText style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '500' }}>
-            {day.programs?.name || 'Program'}
-          </ThemedText>
+          <View style={styles.headerTopRow}>
+            <ThemedText style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '500' }}>
+              {day.programs?.name || 'Program'}
+            </ThemedText>
+            <Pressable
+              onPress={() => router.push(`/(tabs)/program/edit/${day.program_id}`)}
+              accessibilityRole="button"
+              accessibilityLabel="Edit this program"
+              hitSlop={8}
+            >
+              <ThemedText type="linkPrimary">Edit Program</ThemedText>
+            </Pressable>
+          </View>
           <ThemedText type="headlineMedium">
             Day {day.day_number}: {day.name}
           </ThemedText>
@@ -165,7 +179,11 @@ export default function ProgramDayDetailScreen() {
             style={[styles.exerciseCard, { borderColor: theme.border, backgroundColor: theme.backgroundElevated }]}
             onPress={() => {
               if (item.exercise_id) {
-                router.push(`/(tabs)/progress/exercise/${item.exercise_id}`);
+                // `as never`: the /exercise/[exerciseId]/history route resolves
+                // at runtime; expo-router's static typed-routes generator just
+                // intermittently omits it (its sibling /details registers). A
+                // full `expo start -c` regenerates the types cleanly.
+                router.push(`/exercise/${item.exercise_id}/history` as never);
               }
             }}
             accessibilityRole="button"
@@ -185,6 +203,22 @@ export default function ProgramDayDetailScreen() {
                   </ThemedText>
                 )}
               </View>
+              {item.exercise_id && (
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    router.push(`/exercise/${item.exercise_id}/details`);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View details for ${item.exercises?.name || 'exercise'}`}
+                  hitSlop={8}
+                  style={styles.detailsLink}
+                >
+                  <ThemedText type="linkPrimary" style={{ fontSize: 13 }}>
+                    Details
+                  </ThemedText>
+                </Pressable>
+              )}
             </View>
 
             <View style={styles.targetRow}>
@@ -258,6 +292,11 @@ const styles = StyleSheet.create({
   header: {
     gap: Spacing.one,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   errorTitle: {
     marginBottom: Spacing.two,
   },
@@ -287,6 +326,10 @@ const styles = StyleSheet.create({
   exerciseInfo: {
     flex: 1,
     gap: 2,
+  },
+  detailsLink: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
   },
   targetRow: {
     flexDirection: 'row',

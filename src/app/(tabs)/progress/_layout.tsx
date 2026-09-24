@@ -1,7 +1,11 @@
 /**
  * Progress tab layout — uses a Stack navigator for nested screens.
  * index.tsx = main progression dashboard
- * exercise/[exerciseId].tsx = per-exercise history screen
+ *
+ * The per-exercise history/detail screens moved to `src/app/exercise/` (a
+ * route group outside `(tabs)`) so they're reachable from any tab without
+ * back navigation landing on the Progress tab's root — see
+ * `src/app/exercise/_layout.tsx` for the full rationale.
  *
  * Requirements: 12.1, 12.2, 12.3, 12.4, 21.1, 21.2, 21.3
  */
@@ -22,10 +26,6 @@ export default function ProgressLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="exercise/[exerciseId]"
-        options={{ title: 'Exercise History' }}
-      />
     </Stack>
   );
 }

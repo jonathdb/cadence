@@ -28,14 +28,16 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
-import { GLOBAL_EXERCISES, MUSCLE_GROUPS } from '@/data/exercise-seed';
+import { MUSCLE_GROUPS } from '@/data/exercise-seed';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { validateExercise } from '@/lib/validation';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     createExercise,
     deleteExercise,
-    updateExercise,
+    searchExercises,
+    updateExercise
 } from '@/services/exercise-library';
 import { useCadenceStore, type Exercise } from '@/store';
 import { supabase } from '@/utils/supabase';
@@ -60,18 +62,26 @@ const INITIAL_FORM: ExerciseFormState = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Converts seed data into Exercise objects for the store.
- * Uses deterministic IDs based on the exercise name for consistency.
+ * Maps a DB `exercises` row (snake_case, from `searchExercises`) onto the
+ * store's `Exercise` shape (camelCase). Real DB ids flow through unchanged,
+ * so downstream detail/history screens can resolve them against the DB.
  */
-function seedToExercises(): Exercise[] {
-  return GLOBAL_EXERCISES.map((seed, idx) => ({
-    id: `global-${idx}`,
-    name: seed.name,
-    primaryMuscleGroup: seed.primaryMuscleGroup,
-    secondaryMuscleGroups: seed.secondaryMuscleGroups,
-    instructions: seed.instructions,
-    isGlobal: true,
-  }));
+function toStoreExercise(row: {
+  id: string;
+  name: string;
+  primary_muscle_group: string;
+  secondary_muscle_groups: string[];
+  instructions: string;
+  is_global: boolean;
+}): Exercise {
+  return {
+    id: row.id,
+    name: row.name,
+    primaryMuscleGroup: row.primary_muscle_group,
+    secondaryMuscleGroups: row.secondary_muscle_groups,
+    instructions: row.instructions,
+    isGlobal: row.is_global,
+  };
 }
 
 /**
@@ -93,6 +103,7 @@ function useDebounce<T>(value: T, delay: number): T {
 export default function ExerciseLibraryScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const dockClearance = useTabBarClearance();
   const { session } = useAuth();
   const exercises = useCadenceStore((s) => s.exercises);
   const setExercises = useCadenceStore((s) => s.setExercises);
@@ -105,13 +116,43 @@ export default function ExerciseLibraryScreen() {
 
   const debouncedQuery = useDebounce(searchQuery, 200);
 
-  // Seed exercises into store if empty
+  // Load exercises from the real catalog (global + the user's own) on mount.
+  // Previously this seeded synthetic `global-N` ids from static local data,
+  // which never matched a real `exercises` row — breaking any screen that
+  // looks an exercise up by id (e.g. View Details, View History).
   useEffect(() => {
-    if (exercises.length === 0) {
-      const seeded = seedToExercises();
-      setExercises(seeded);
+    if (!session?.user.id) return;
+
+    let cancelled = false;
+
+    async function load() {
+      setIsLoading(true);
+      try {
+        const rows = await searchExercises(supabase, session!.user.id, { limit: 500 });
+        if (!cancelled) {
+          setExercises(rows.map(toStoreExercise));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          Alert.alert(
+            'Error',
+            err instanceof Error ? err.message : 'Failed to load exercises'
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
     }
-  }, [exercises.length, setExercises]);
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally runs once per mount/session change — search/filter below
+    // operate locally over this fetched set for instant (<200ms) feedback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id]);
 
   // ─── Search & Filter (local, <200ms) ────────────────────────────────────────
 
@@ -269,7 +310,13 @@ export default function ExerciseLibraryScreen() {
         theme={theme}
         onEdit={(e) => setEditingExercise(e)}
         onDelete={(e) => handleDeleteExercise(e)}
-        onViewHistory={(e) => router.push(`/(tabs)/progress/exercise/${e.id}`)}
+        // `as never`: the /exercise/[exerciseId]/history route resolves at
+        // runtime, but expo-router's static typed-routes generator
+        // (`expo customize`) intermittently fails to emit it into the route
+        // union (its sibling /details registers fine). Cast avoids a spurious
+        // compile error; a full `expo start -c` regenerates the types cleanly.
+        onViewHistory={(e) => router.push(`/exercise/${e.id}/history` as never)}
+        onViewDetails={(e) => router.push(`/exercise/${e.id}/details`)}
       />
     ),
     [theme, handleDeleteExercise, router]
@@ -379,7 +426,7 @@ export default function ExerciseLibraryScreen() {
         data={filteredExercises}
         keyExtractor={keyExtractor}
         renderItem={renderExerciseItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: dockClearance }]}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <ThemedText
@@ -465,22 +512,29 @@ interface ExerciseCardProps {
   onEdit: (exercise: Exercise) => void;
   onDelete: (exercise: Exercise) => void;
   onViewHistory: (exercise: Exercise) => void;
+  onViewDetails: (exercise: Exercise) => void;
 }
 
-function ExerciseCard({ exercise, theme, onEdit, onDelete, onViewHistory }: ExerciseCardProps) {
+function ExerciseCard({ exercise, theme, onEdit, onDelete, onViewHistory, onViewDetails }: ExerciseCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <Pressable
+    <View
       style={[
         styles.exerciseCard,
         { borderColor: theme.border, backgroundColor: theme.backgroundElevated },
       ]}
-      onPress={() => setExpanded(!expanded)}
-      accessibilityRole="button"
-      accessibilityLabel={`${exercise.name}, ${exercise.primaryMuscleGroup}${expanded ? ', expanded' : ''}`}
     >
-      <View style={styles.exerciseCardHeader}>
+      {/* Header is its own Pressable (not nested inside another Pressable) —
+          the action buttons below live in a sibling, not a descendant, of
+          this toggle so tapping them can never also trigger the toggle or
+          conflict with it in React Native Web's responder system. */}
+      <Pressable
+        style={styles.exerciseCardHeader}
+        onPress={() => setExpanded(!expanded)}
+        accessibilityRole="button"
+        accessibilityLabel={`${exercise.name}, ${exercise.primaryMuscleGroup}${expanded ? ', expanded' : ''}`}
+      >
         <View style={styles.exerciseCardInfo}>
           <ThemedText style={[styles.exerciseName, { color: theme.text }]}>
             {exercise.name}
@@ -520,7 +574,7 @@ function ExerciseCard({ exercise, theme, onEdit, onDelete, onViewHistory }: Exer
             </ThemedText>
           </View>
         )}
-      </View>
+      </Pressable>
 
       {/* Expanded Detail */}
       {expanded && (
@@ -542,6 +596,16 @@ function ExerciseCard({ exercise, theme, onEdit, onDelete, onViewHistory }: Exer
           )}
 
           <View style={styles.exerciseActions}>
+            <Pressable
+              style={[styles.actionButton, { backgroundColor: theme.accentSoft }]}
+              onPress={() => onViewDetails(exercise)}
+              accessibilityRole="button"
+              accessibilityLabel={`View details for ${exercise.name}`}
+            >
+              <ThemedText style={{ color: theme.accent, fontWeight: '600', fontSize: 13 }}>
+                View Details
+              </ThemedText>
+            </Pressable>
             <Pressable
               style={[styles.actionButton, { backgroundColor: theme.accentSoft }]}
               onPress={() => onViewHistory(exercise)}
@@ -579,7 +643,7 @@ function ExerciseCard({ exercise, theme, onEdit, onDelete, onViewHistory }: Exer
           </View>
         </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -862,7 +926,7 @@ const styles = StyleSheet.create({
   },
   searchSection: {
     padding: Spacing.three,
-    paddingBottom: Spacing.two,
+    paddingBottom: Spacing.three,
   },
   searchInput: {
     borderWidth: 1,
@@ -874,6 +938,7 @@ const styles = StyleSheet.create({
   },
   chipScroll: {
     maxHeight: 44,
+    marginTop: Spacing.one,
     paddingBottom: Spacing.two,
   },
   chipContainer: {
@@ -899,7 +964,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: Spacing.three,
-    paddingBottom: 100,
     gap: Spacing.two,
   },
   exerciseCard: {

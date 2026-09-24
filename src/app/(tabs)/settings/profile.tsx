@@ -8,6 +8,7 @@
  * Reads/writes via src/services/profile.ts. Expo SDK 57 (React Native 0.86):
  * uses only core RN primitives + existing themed UI components.
  */
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -21,12 +22,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { PrimaryButton } from '@/components/ui/Button';
+import { GhostButton, PrimaryButton } from '@/components/ui/Button';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/providers/AuthProvider';
-import { getUserProfile, updateUserProfile } from '@/services/profile';
+import { getUserProfile, setOnboardingStatus, updateUserProfile } from '@/services/profile';
 import {
     EXPERIENCE_LEVELS,
     TRAINING_GOALS,
@@ -65,11 +66,13 @@ export default function ProfileScreen() {
   const { session } = useAuth();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [isStartingOnboarding, setIsStartingOnboarding] = useState(false);
 
   // Form state
   const [goal, setGoal] = useState<TrainingGoal | null>(null);
@@ -143,6 +146,24 @@ export default function ProfileScreen() {
       setIsSaving(false);
     }
   }
+
+  /**
+   * Re-runs the first-run onboarding flow on demand. Resets the persisted
+   * status back to `pending` so `/onboarding`'s own gate doesn't bounce the
+   * user straight back out, then navigates there directly.
+   */
+  const handleStartOnboarding = useCallback(async () => {
+    if (!session?.user.id) return;
+    setIsStartingOnboarding(true);
+    try {
+      await setOnboardingStatus(session.user.id, 'pending');
+      router.push('/onboarding');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start onboarding');
+    } finally {
+      setIsStartingOnboarding(false);
+    }
+  }, [session?.user.id, router]);
 
   if (isLoading) {
     return (
@@ -313,6 +334,14 @@ export default function ProfileScreen() {
             Profile saved.
           </ThemedText>
         )}
+
+        <GhostButton
+          label="Set up with guided onboarding"
+          loading={isStartingOnboarding}
+          fullWidth
+          onPress={handleStartOnboarding}
+          accessibilityLabel="Set up profile with guided onboarding"
+        />
       </ScrollView>
     </ThemedView>
   );

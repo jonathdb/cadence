@@ -79,7 +79,13 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'program_modify',
       description:
-        'Modify the user\'s active program. Specify the changes to apply. ' +
+        'Modify the user\'s active program. All changes in one call are applied atomically ' +
+        '(a single transaction): if any change fails, none are applied. ' +
+        'To swap one exercise for another, use a SINGLE "replace_exercise" change with ' +
+        'exercise_name (the exercise to remove) and new_exercise_name (the exercise to add) — ' +
+        'do NOT emit a separate remove + add. ' +
+        'To apply the same change to several days at once (e.g. replace an exercise wherever it ' +
+        'appears), pass day_numbers as an array; otherwise pass a single day_number. ' +
         'The modify_day action accepts updates including name and planned_duration_minutes (1-480 or null).',
       parameters: {
         type: 'object',
@@ -87,13 +93,19 @@ export const toolDefinitions: ToolDefinition[] = [
           program_id: { type: 'string', description: 'UUID of the program to modify' },
           changes: {
             type: 'array',
-            description: 'List of modifications',
+            description: 'List of modifications, applied atomically in order',
             items: {
               type: 'object',
               properties: {
-                action: { type: 'string', enum: ['add_day', 'remove_day', 'modify_day', 'add_exercise', 'remove_exercise', 'modify_exercise'] },
-                day_number: { type: 'integer' },
-                exercise_name: { type: 'string' },
+                action: { type: 'string', enum: ['add_day', 'remove_day', 'modify_day', 'add_exercise', 'remove_exercise', 'modify_exercise', 'replace_exercise'] },
+                day_number: { type: 'integer', description: 'Single target day (1-based). Use this OR day_numbers.' },
+                day_numbers: {
+                  type: 'array',
+                  items: { type: 'integer' },
+                  description: 'Multiple target days (1-based) to apply this same change to. Takes precedence over day_number.',
+                },
+                exercise_name: { type: 'string', description: 'For add/remove/modify: the exercise. For replace_exercise: the exercise to REMOVE. Must match a get_exercises name.' },
+                new_exercise_name: { type: 'string', description: 'replace_exercise only: the exercise to ADD in place of exercise_name. Must match a get_exercises name.' },
                 updates: { type: 'object', description: 'Fields to update' },
               },
               required: ['action'],
@@ -134,6 +146,175 @@ export const toolDefinitions: ToolDefinition[] = [
           tone: { type: 'string', enum: ['encouraging', 'analytical', 'brief'], description: 'Tone of the entry' },
         },
         required: ['session_id', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'session_update',
+      description:
+        'Update a logged workout session\'s date/time, status, or notes. Does not touch the sets logged within it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          session_id: { type: 'string', description: 'UUID of the session to update' },
+          updates: {
+            type: 'object',
+            description: 'Fields to update',
+            properties: {
+              started_at: { type: 'string', description: 'ISO 8601 timestamp' },
+              completed_at: { type: 'string', description: 'ISO 8601 timestamp' },
+              status: { type: 'string', enum: ['in_progress', 'completed'] },
+              notes: { type: 'string' },
+            },
+          },
+        },
+        required: ['session_id', 'updates'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'session_delete',
+      description:
+        'Delete a logged workout session. This is a soft-delete: the session is hidden from lists and analytics, ' +
+        'but the sets logged in it are preserved as history and are not removed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          session_id: { type: 'string', description: 'UUID of the session to delete' },
+        },
+        required: ['session_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'exercise_instance_add',
+      description:
+        'Add an exercise instance (a single exercise entry with sets/reps/weight targets) to a specific day of a program. ' +
+        'The exercise name must exist in the catalog — call get_exercises first if unsure.',
+      parameters: {
+        type: 'object',
+        properties: {
+          program_id: { type: 'string', description: 'UUID of the program' },
+          day_number: { type: 'integer', description: 'The day to add the exercise to (1-based)' },
+          exercise_name: { type: 'string', description: 'Must match a name returned by get_exercises' },
+          updates: {
+            type: 'object',
+            description: 'Target fields for the new instance',
+            properties: {
+              target_sets: { type: 'integer' },
+              target_reps: { type: 'string' },
+              target_weight: { type: 'number' },
+              target_rpe: { type: 'number' },
+              timer_config: { type: 'object' },
+              notes: { type: 'string' },
+            },
+          },
+        },
+        required: ['program_id', 'day_number', 'exercise_name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'exercise_instance_update',
+      description:
+        'Update the target sets, reps, weight, RPE, timer, or notes of a single exercise instance within a program day. ' +
+        'This never modifies the shared exercise catalog entry — only this specific instance.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item_id: { type: 'string', description: 'UUID of the program_day_items row to update' },
+          updates: {
+            type: 'object',
+            description: 'Fields to update',
+            properties: {
+              target_sets: { type: 'integer' },
+              target_reps: { type: 'string' },
+              target_weight: { type: 'number' },
+              target_rpe: { type: 'number' },
+              timer_config: { type: 'object' },
+              notes: { type: 'string' },
+            },
+          },
+        },
+        required: ['item_id', 'updates'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'exercise_instance_remove',
+      description: 'Remove a single exercise instance from a program day. Logged history for that exercise is unaffected.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item_id: { type: 'string', description: 'UUID of the program_day_items row to remove' },
+        },
+        required: ['item_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'program_archive',
+      description:
+        'Archive a program (soft, non-destructive). The program and its history remain but it is no longer the active program.',
+      parameters: {
+        type: 'object',
+        properties: {
+          program_id: { type: 'string', description: 'UUID of the program to archive' },
+        },
+        required: ['program_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'program_delete',
+      description:
+        'Delete a program. Defaults to archiving (non-destructive, reversible). Only use mode "purge" when the user ' +
+        'explicitly asks for permanent deletion — purge cannot be undone, though logged workout history is preserved.',
+      parameters: {
+        type: 'object',
+        properties: {
+          program_id: { type: 'string', description: 'UUID of the program to delete' },
+          mode: {
+            type: 'string',
+            enum: ['archive', 'purge'],
+            description: 'Defaults to "archive" if omitted',
+          },
+        },
+        required: ['program_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_exercises',
+      description:
+        'Search the exercise catalog (global exercises plus any the user created). ' +
+        'ALWAYS call this before naming an exercise in program_create or program_modify — ' +
+        'you may only use exercise names this tool returns. Never invent an exercise name; ' +
+        'if you are not sure whether one exists, call this first.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Name substring to search for (case-insensitive)' },
+          muscle_group: { type: 'string', description: 'Filter by primary muscle group' },
+          equipment: { type: 'string', description: 'Filter by required equipment' },
+          limit: { type: 'integer', description: 'Max results to return (default 20, max 100)' },
+        },
       },
     },
   },

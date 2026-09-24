@@ -581,69 +581,182 @@ interface ProgramDayInput {
 
 interface ProgramModifyChange {
   action: string;
+  // A change may target a single day (day_number) or several days at once
+  // (day_numbers). Both are accepted; day_numbers takes precedence.
   day_number?: number;
+  day_numbers?: number[];
   exercise_name?: string;
+  // replace_exercise: the exercise to swap IN (exercise_name is the one to
+  // swap OUT).
+  new_exercise_name?: string;
   updates?: Record<string, unknown>;
 }
 
-// --- Helper: Look up exercise by name (global or user's private) ---
-async function resolveExerciseId(
+// A change with exercise names resolved to catalog UUIDs, ready to hand to
+// the apply_program_modifications RPC. Names are resolved in TS so catalog
+// grounding (Requirements 2.1, 4.9) stays enforced at a single point.
+interface ResolvedProgramModifyChange {
+  action: string;
+  day_number?: number;
+  day_numbers?: number[];
+  exercise_id?: string;
+  new_exercise_id?: string;
+  updates?: Record<string, unknown>;
+}
+
+// --- Exercise catalog grounding (Requirements 2.1, 4.9) ---------------------
+//
+// The agent must never persist an exercise outside the user's allowed
+// catalog (global exercises + the user's own). `resolveExerciseIdOrThrow`
+// is the single enforcement point used by every tool that references an
+// exercise by name (program_create, program_modify, exercise_instance_add).
+// On a miss it throws a structured, recoverable error carrying the nearest
+// catalog matches so the agent can retry with a real name instead of
+// inventing one.
+
+/** Thrown by `resolveExerciseIdOrThrow` when a name has no catalog match. */
+export class ExerciseNotInCatalogException extends Error {
+  public readonly code = 'exercise_not_in_catalog' as const;
+  public readonly suggestions: string[];
+  public readonly exerciseName: string;
+
+  constructor(name: string, suggestions: string[]) {
+    // Suggestions are folded into the message text (not just the structured
+    // `suggestions` field) because the tool executor currently forwards only
+    // `err.message` as the string `error` the model sees — this keeps the
+    // recoverable hint intact on that plain-string path while `toToolResult()`
+    // still exposes the structured shape for any caller that wants it.
+    const hint =
+      suggestions.length > 0
+        ? ` Did you mean: ${suggestions.join(', ')}? Call get_exercises to see valid names.`
+        : ' Call get_exercises to see valid names.';
+    super(`Exercise not found: "${name}".${hint}`);
+    this.name = 'ExerciseNotInCatalogException';
+    this.suggestions = suggestions;
+    this.exerciseName = name;
+  }
+
+  /** Structured payload surfaced back to the model via the tool result. */
+  toToolResult(): { error: 'exercise_not_in_catalog'; name: string; suggestions: string[] } {
+    return { error: this.code, name: this.exerciseName, suggestions: this.suggestions };
+  }
+}
+
+/** Lowercases and collapses whitespace/punctuation for fuzzy comparison. */
+export function normalizeExerciseName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Cheap token-overlap similarity in [0, 1] between two exercise names.
+ * Pure function so it can be property-tested without a DB. Not a full
+ * trigram implementation, but good enough to rank "nearest catalog match"
+ * suggestions for a not-found name.
+ */
+export function exerciseNameSimilarity(a: string, b: string): number {
+  const normA = normalizeExerciseName(a);
+  const normB = normalizeExerciseName(b);
+  if (normA === normB) return 1;
+
+  const tokensA = new Set(normA.split(' ').filter(Boolean));
+  const tokensB = new Set(normB.split(' ').filter(Boolean));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+
+  let overlap = 0;
+  for (const t of tokensA) {
+    if (tokensB.has(t)) overlap += 1;
+  }
+  return overlap / Math.max(tokensA.size, tokensB.size);
+}
+
+/** A candidate exercise as returned by the exercises table for matching. */
+interface CatalogCandidate {
+  id: string;
+  name: string;
+}
+
+/**
+ * Pure resolution over an already-fetched candidate list: exact
+ * (case-insensitive) match wins; otherwise the highest-similarity candidate
+ * above the threshold is treated as a confident match. Returns `null` when
+ * nothing clears the threshold — the caller decides whether to reject or
+ * suggest. Factored out from the DB-calling wrapper so it's unit/property
+ * testable without a Supabase client (Design Property 5).
+ */
+export function resolveAllowedExerciseId(
+  candidates: CatalogCandidate[],
+  exerciseName: string,
+  similarityThreshold = 0.6
+): { id: string; suggestions: string[] } | { id: null; suggestions: string[] } {
+  const normalizedTarget = normalizeExerciseName(exerciseName);
+
+  const exact = candidates.find((c) => normalizeExerciseName(c.name) === normalizedTarget);
+  if (exact) {
+    return { id: exact.id, suggestions: [] };
+  }
+
+  const ranked = candidates
+    .map((c) => ({ c, score: exerciseNameSimilarity(c.name, exerciseName) }))
+    .sort((a, b) => b.score - a.score);
+
+  const suggestions = ranked
+    .filter((r) => r.score > 0)
+    .slice(0, 5)
+    .map((r) => r.c.name);
+
+  const best = ranked[0];
+  if (best && best.score >= similarityThreshold) {
+    return { id: best.c.id, suggestions };
+  }
+
+  return { id: null, suggestions };
+}
+
+/**
+ * Resolves an exercise name to an id within the user's allowed catalog
+ * (global exercises + the user's own), throwing `ExerciseNotInCatalogException`
+ * with nearest-match suggestions when nothing resolves confidently. This is
+ * the enforcement point every exercise-referencing tool must call — it never
+ * returns an id outside the allowed set (Design Property 5, Requirements
+ * 2.1, 4.9).
+ */
+async function resolveExerciseIdOrThrow(
   supabase: SupabaseClient,
   userId: string,
   exerciseName: string
 ): Promise<string> {
   const { data, error } = await supabase
     .from('exercises')
-    .select('id')
-    .or(`is_global.eq.true,user_id.eq.${userId}`)
-    .ilike('name', exerciseName)
-    .limit(1)
-    .single();
+    .select('id, name')
+    .or(`is_global.eq.true,user_id.eq.${userId}`);
 
-  if (error || !data) {
-    throw new Error(`Exercise not found: "${exerciseName}"`);
+  if (error) {
+    throw new Error(`Failed to look up exercise catalog: ${error.message}`);
   }
-  return data.id;
+
+  const candidates = (data ?? []) as CatalogCandidate[];
+  const result = resolveAllowedExerciseId(candidates, exerciseName);
+
+  if (result.id === null) {
+    throw new ExerciseNotInCatalogException(exerciseName, result.suggestions);
+  }
+
+  return result.id;
 }
 
-// --- Helper: Fetch full program structure for before/after state ---
-async function fetchProgramStructure(
-  supabase: SupabaseClient,
-  programId: string
-): Promise<Record<string, unknown>> {
-  const { data: program, error: progErr } = await supabase
-    .from('programs')
-    .select('id, name, status')
-    .eq('id', programId)
-    .single();
+// Backward-compatible alias — all call sites now route through the
+// catalog-grounded resolver above.
+const resolveExerciseId = resolveExerciseIdOrThrow;
 
-  if (progErr || !program) {
-    throw new Error(`Program not found: ${programId}`);
-  }
-
-  const { data: days, error: daysErr } = await supabase
-    .from('program_days')
-    .select('id, day_number, name, planned_duration_minutes')
-    .eq('program_id', programId)
-    .order('day_number');
-
-  if (daysErr) {
-    throw new Error(`Failed to fetch program days: ${daysErr.message}`);
-  }
-
-  const daysWithItems = [];
-  for (const day of days || []) {
-    const { data: items } = await supabase
-      .from('program_day_items')
-      .select('id, type, order_index, exercise_id, block_id, target_sets, target_reps, target_weight, target_rpe, timer_config, notes')
-      .eq('program_day_id', day.id)
-      .order('order_index');
-
-    daysWithItems.push({ ...day, items: items || [] });
-  }
-
-  return { ...program, days: daysWithItems };
-}
+// NOTE: The before/after program-structure snapshot for modification_history
+// is now computed inside the apply_program_modifications RPC (via the SQL
+// program_structure_snapshot function) so the whole modification is atomic.
+// The former TS fetchProgramStructure helper was removed with that move.
 
 // --- program_create handler ---
 async function handleProgramCreate(
@@ -790,213 +903,76 @@ async function handleProgramModify(
     throw new Error('Program not found or not owned by user');
   }
 
-  // Capture before_state
-  const beforeState = await fetchProgramStructure(supabase, programId);
+  // Resolve exercise names -> catalog UUIDs HERE (single grounding
+  // enforcement point, Requirements 2.1/4.9) before handing a fully-resolved
+  // payload to the atomic RPC. This keeps the fuzzy catalog matcher and its
+  // recoverable "not in catalog" error on the TS side, while the actual
+  // mutation runs in one transaction that rolls back entirely on any failure.
+  const resolvedChanges: ResolvedProgramModifyChange[] = [];
 
-  // Apply changes based on action type
   for (const change of changes) {
+    const resolved: ResolvedProgramModifyChange = {
+      action: change.action,
+      updates: change.updates,
+    };
+
+    // Normalize day targeting: day_numbers wins, else fall back to day_number.
+    if (Array.isArray(change.day_numbers) && change.day_numbers.length > 0) {
+      resolved.day_numbers = change.day_numbers;
+    } else if (typeof change.day_number === 'number') {
+      resolved.day_number = change.day_number;
+    }
+
     switch (change.action) {
-      case 'add_day': {
-        if (!change.updates) {
-          throw new Error('add_day requires "updates" with day name');
-        }
-        const dayName = (change.updates.name as string) || `Day ${change.day_number || 1}`;
-        const dayNumber = change.day_number || 1;
-
-        const { error } = await supabase
-          .from('program_days')
-          .insert({
-            program_id: programId,
-            day_number: dayNumber,
-            name: dayName,
-          });
-
-        if (error) {
-          throw new Error(`Failed to add day: ${error.message}`);
-        }
+      case 'add_day':
+      case 'remove_day':
+      case 'modify_day':
+        // No exercise name to resolve.
         break;
-      }
 
-      case 'remove_day': {
-        if (!change.day_number) {
-          throw new Error('remove_day requires "day_number"');
-        }
-
-        const { data: day } = await supabase
-          .from('program_days')
-          .select('id')
-          .eq('program_id', programId)
-          .eq('day_number', change.day_number)
-          .single();
-
-        if (day) {
-          const { error } = await supabase
-            .from('program_days')
-            .delete()
-            .eq('id', day.id);
-
-          if (error) {
-            throw new Error(`Failed to remove day: ${error.message}`);
-          }
-        }
-        break;
-      }
-
-      case 'modify_day': {
-        if (!change.day_number || !change.updates) {
-          throw new Error('modify_day requires "day_number" and "updates"');
-        }
-
-        const { error } = await supabase
-          .from('program_days')
-          .update(change.updates)
-          .eq('program_id', programId)
-          .eq('day_number', change.day_number);
-
-        if (error) {
-          throw new Error(`Failed to modify day: ${error.message}`);
-        }
-        break;
-      }
-
-      case 'add_exercise': {
-        if (!change.day_number || !change.exercise_name) {
-          throw new Error('add_exercise requires "day_number" and "exercise_name"');
-        }
-
-        const { data: day } = await supabase
-          .from('program_days')
-          .select('id')
-          .eq('program_id', programId)
-          .eq('day_number', change.day_number)
-          .single();
-
-        if (!day) {
-          throw new Error(`Day ${change.day_number} not found`);
-        }
-
-        const exerciseId = await resolveExerciseId(supabase, userId, change.exercise_name);
-
-        // Get current max order for this day
-        const { data: maxOrderResult } = await supabase
-          .from('program_day_items')
-          .select('order_index')
-          .eq('program_day_id', day.id)
-          .order('order_index', { ascending: false })
-          .limit(1)
-          .single();
-
-        const nextOrder = (maxOrderResult?.order_index || 0) + 1;
-        const updates = change.updates || {};
-
-        const { error } = await supabase
-          .from('program_day_items')
-          .insert({
-            program_day_id: day.id,
-            type: 'exercise',
-            order_index: nextOrder,
-            exercise_id: exerciseId,
-            target_sets: (updates.target_sets as number) || 3,
-            target_reps: (updates.target_reps as string) || '8-12',
-            target_weight: (updates.target_weight as number) || null,
-            target_rpe: (updates.target_rpe as number) || null,
-            timer_config: (updates.timer_config as Record<string, unknown>) || null,
-            notes: (updates.notes as string) || null,
-          });
-
-        if (error) {
-          throw new Error(`Failed to add exercise: ${error.message}`);
-        }
-        break;
-      }
-
-      case 'remove_exercise': {
-        if (!change.day_number || !change.exercise_name) {
-          throw new Error('remove_exercise requires "day_number" and "exercise_name"');
-        }
-
-        const { data: day } = await supabase
-          .from('program_days')
-          .select('id')
-          .eq('program_id', programId)
-          .eq('day_number', change.day_number)
-          .single();
-
-        if (!day) {
-          throw new Error(`Day ${change.day_number} not found`);
-        }
-
-        const exerciseId = await resolveExerciseId(supabase, userId, change.exercise_name);
-
-        const { error } = await supabase
-          .from('program_day_items')
-          .delete()
-          .eq('program_day_id', day.id)
-          .eq('exercise_id', exerciseId);
-
-        if (error) {
-          throw new Error(`Failed to remove exercise: ${error.message}`);
-        }
-        break;
-      }
-
+      case 'add_exercise':
+      case 'remove_exercise':
       case 'modify_exercise': {
-        if (!change.day_number || !change.exercise_name || !change.updates) {
-          throw new Error('modify_exercise requires "day_number", "exercise_name", and "updates"');
+        if (!change.exercise_name) {
+          throw new Error(`${change.action} requires "exercise_name"`);
         }
+        resolved.exercise_id = await resolveExerciseId(supabase, userId, change.exercise_name);
+        break;
+      }
 
-        const { data: day } = await supabase
-          .from('program_days')
-          .select('id')
-          .eq('program_id', programId)
-          .eq('day_number', change.day_number)
-          .single();
-
-        if (!day) {
-          throw new Error(`Day ${change.day_number} not found`);
+      case 'replace_exercise': {
+        if (!change.exercise_name || !change.new_exercise_name) {
+          throw new Error('replace_exercise requires "exercise_name" (to remove) and "new_exercise_name" (to add)');
         }
-
-        const exerciseId = await resolveExerciseId(supabase, userId, change.exercise_name);
-
-        const { error } = await supabase
-          .from('program_day_items')
-          .update(change.updates)
-          .eq('program_day_id', day.id)
-          .eq('exercise_id', exerciseId);
-
-        if (error) {
-          throw new Error(`Failed to modify exercise: ${error.message}`);
-        }
+        resolved.exercise_id = await resolveExerciseId(supabase, userId, change.exercise_name);
+        resolved.new_exercise_id = await resolveExerciseId(supabase, userId, change.new_exercise_name);
         break;
       }
 
       default:
         throw new Error(`Unknown modification action: ${change.action}`);
     }
+
+    resolvedChanges.push(resolved);
   }
 
-  // Capture after_state
-  const afterState = await fetchProgramStructure(supabase, programId);
+  // Apply the whole batch atomically. The RPC runs in a single transaction:
+  // any failure (day not found, 0-row remove, unknown action) rolls back
+  // every change, so a partial "replace" can never persist.
+  const { data: rpcResult, error: rpcErr } = await supabase.rpc('apply_program_modifications', {
+    p_user_id: userId,
+    p_program_id: programId,
+    p_changes: resolvedChanges,
+    p_reason: reason,
+  });
 
-  // Record modification_history (before/after state)
-  const { error: histErr } = await supabase
-    .from('modification_history')
-    .insert({
-      program_id: programId,
-      user_id: userId,
-      change_type: reason,
-      before_state: beforeState,
-      after_state: afterState,
-      source: 'agent',
-    });
-
-  if (histErr) {
-    console.error('Failed to record modification history:', histErr.message);
+  if (rpcErr) {
+    throw new Error(`Failed to apply program modifications: ${rpcErr.message}`);
   }
 
-  return {
+  return rpcResult ?? {
     program_id: programId,
-    modifications_applied: changes.length,
+    modifications_applied: resolvedChanges.length,
   };
 }
 
@@ -1028,6 +1004,314 @@ async function handleProgramActivate(
   };
 }
 
+// --- session_update handler ---
+// Validates: Requirements 4.2, 4.9
+async function handleSessionUpdate(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const sessionId = args.session_id as string;
+  const updates = args.updates as Record<string, unknown>;
+
+  if (!sessionId || !updates || typeof updates !== 'object') {
+    throw new Error('session_update requires "session_id" and "updates" arguments');
+  }
+
+  const allowedFields = ['started_at', 'completed_at', 'status', 'notes'];
+  const cleanUpdates: Record<string, unknown> = {};
+  for (const key of allowedFields) {
+    if (key in updates) {
+      cleanUpdates[key] = updates[key];
+    }
+  }
+
+  if (Object.keys(cleanUpdates).length === 0) {
+    throw new Error('session_update requires at least one of: started_at, completed_at, status, notes');
+  }
+
+  const { data, error } = await supabase
+    .from('sessions')
+    .update(cleanUpdates)
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    throw new Error('Session not found or not owned by user');
+  }
+
+  return { session_id: sessionId, updated_fields: Object.keys(cleanUpdates) };
+}
+
+// --- session_delete handler (soft-delete; logged_sets preserved) ---
+// Validates: Requirements 4.2, 4.9, 4.12
+async function handleSessionDelete(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const sessionId = args.session_id as string;
+
+  if (!sessionId) {
+    throw new Error('session_delete requires "session_id" argument');
+  }
+
+  const { data, error } = await supabase
+    .from('sessions')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    throw new Error('Session not found or not owned by user');
+  }
+
+  return { session_id: sessionId, deleted: true };
+}
+
+// --- exercise_instance_add handler ---
+// Validates: Requirements 2.1, 4.3, 4.9
+async function handleExerciseInstanceAdd(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const programId = args.program_id as string;
+  const dayNumber = args.day_number as number;
+  const exerciseName = args.exercise_name as string;
+  const updates = (args.updates as Record<string, unknown>) || {};
+
+  if (!programId || !dayNumber || !exerciseName) {
+    throw new Error('exercise_instance_add requires "program_id", "day_number", and "exercise_name" arguments');
+  }
+
+  // Verify program belongs to user
+  const { data: program, error: progErr } = await supabase
+    .from('programs')
+    .select('id')
+    .eq('id', programId)
+    .eq('user_id', userId)
+    .single();
+
+  if (progErr || !program) {
+    throw new Error('Program not found or not owned by user');
+  }
+
+  const { data: day, error: dayErr } = await supabase
+    .from('program_days')
+    .select('id')
+    .eq('program_id', programId)
+    .eq('day_number', dayNumber)
+    .single();
+
+  if (dayErr || !day) {
+    throw new Error(`Day ${dayNumber} not found`);
+  }
+
+  // Catalog grounding — never persists an exercise outside the allowed set.
+  const exerciseId = await resolveExerciseIdOrThrow(supabase, userId, exerciseName);
+
+  const { data: maxOrderResult } = await supabase
+    .from('program_day_items')
+    .select('order_index')
+    .eq('program_day_id', day.id)
+    .order('order_index', { ascending: false })
+    .limit(1)
+    .single();
+
+  const nextOrder = (maxOrderResult?.order_index || 0) + 1;
+
+  const { data: inserted, error } = await supabase
+    .from('program_day_items')
+    .insert({
+      program_day_id: day.id,
+      type: 'exercise',
+      order_index: nextOrder,
+      exercise_id: exerciseId,
+      target_sets: (updates.target_sets as number) || 3,
+      target_reps: (updates.target_reps as string) || '8-12',
+      target_weight: (updates.target_weight as number) || null,
+      target_rpe: (updates.target_rpe as number) || null,
+      timer_config: (updates.timer_config as Record<string, unknown>) || null,
+      notes: (updates.notes as string) || null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !inserted) {
+    throw new Error(`Failed to add exercise instance: ${error?.message ?? 'unknown error'}`);
+  }
+
+  return { item_id: inserted.id, program_id: programId, exercise_id: exerciseId };
+}
+
+/**
+ * Ownership check for a `program_day_items` row: it has no direct `user_id`
+ * column, so ownership is verified by joining up through `program_days` →
+ * `programs.user_id`, mirroring the RLS policy shape.
+ */
+async function verifyProgramDayItemOwnership(
+  supabase: SupabaseClient,
+  userId: string,
+  itemId: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('program_day_items')
+    .select('id, program_days!inner(program_id, programs!inner(user_id))')
+    .eq('id', itemId)
+    .eq('program_days.programs.user_id', userId)
+    .single();
+
+  if (error || !data) {
+    throw new Error('Exercise instance not found or not owned by user');
+  }
+}
+
+// --- exercise_instance_update handler (instance fields only; never touches the catalog exercise) ---
+// Validates: Requirements 4.3, 4.4, 4.9
+async function handleExerciseInstanceUpdate(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const itemId = args.item_id as string;
+  const updates = args.updates as Record<string, unknown>;
+
+  if (!itemId || !updates || typeof updates !== 'object') {
+    throw new Error('exercise_instance_update requires "item_id" and "updates" arguments');
+  }
+
+  await verifyProgramDayItemOwnership(supabase, userId, itemId);
+
+  const allowedFields = ['target_sets', 'target_reps', 'target_weight', 'target_rpe', 'timer_config', 'notes'];
+  const cleanUpdates: Record<string, unknown> = {};
+  for (const key of allowedFields) {
+    if (key in updates) {
+      cleanUpdates[key] = updates[key];
+    }
+  }
+
+  if (Object.keys(cleanUpdates).length === 0) {
+    throw new Error(
+      'exercise_instance_update requires at least one of: target_sets, target_reps, target_weight, target_rpe, timer_config, notes'
+    );
+  }
+
+  const { error } = await supabase
+    .from('program_day_items')
+    .update(cleanUpdates)
+    .eq('id', itemId);
+
+  if (error) {
+    throw new Error(`Failed to update exercise instance: ${error.message}`);
+  }
+
+  return { item_id: itemId, updated_fields: Object.keys(cleanUpdates) };
+}
+
+// --- exercise_instance_remove handler (logged_sets unaffected — history inherently preserved) ---
+// Validates: Requirements 4.3, 4.9, 4.12
+async function handleExerciseInstanceRemove(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const itemId = args.item_id as string;
+
+  if (!itemId) {
+    throw new Error('exercise_instance_remove requires "item_id" argument');
+  }
+
+  await verifyProgramDayItemOwnership(supabase, userId, itemId);
+
+  const { error } = await supabase
+    .from('program_day_items')
+    .delete()
+    .eq('id', itemId);
+
+  if (error) {
+    throw new Error(`Failed to remove exercise instance: ${error.message}`);
+  }
+
+  return { item_id: itemId, removed: true };
+}
+
+// --- program_archive handler (soft archive) ---
+// Validates: Requirements 3.*, 4.5, 4.9
+async function handleProgramArchive(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const programId = args.program_id as string;
+
+  if (!programId) {
+    throw new Error('program_archive requires "program_id" argument');
+  }
+
+  const { data, error } = await supabase
+    .from('programs')
+    .update({ status: 'archived', updated_at: new Date().toISOString() })
+    .eq('id', programId)
+    .eq('user_id', userId)
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    throw new Error('Program not found or not owned by user');
+  }
+
+  return { program_id: programId, status: 'archived' };
+}
+
+// --- program_delete handler (mode: 'archive' | 'purge', default 'archive') ---
+// Validates: Requirements 3.*, 4.5, 4.9, 4.12
+async function handleProgramDelete(
+  supabase: SupabaseClient,
+  userId: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const programId = args.program_id as string;
+  const mode = ((args.mode as string) || 'archive') as 'archive' | 'purge';
+
+  if (!programId) {
+    throw new Error('program_delete requires "program_id" argument');
+  }
+
+  if (mode !== 'archive' && mode !== 'purge') {
+    throw new Error('program_delete "mode" must be "archive" or "purge"');
+  }
+
+  if (mode === 'archive') {
+    return handleProgramArchive(supabase, userId, { program_id: programId });
+  }
+
+  // Purge: hard delete. History is preserved via the `ON DELETE SET NULL`
+  // FK on sessions.program_day_id (migration 19) — sessions survive with
+  // their program_day_id cleared, logged_sets are untouched.
+  const { error, count } = await supabase
+    .from('programs')
+    .delete({ count: 'exact' })
+    .eq('id', programId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Failed to delete program: ${error.message}`);
+  }
+
+  if (!count) {
+    throw new Error('Program not found or not owned by user');
+  }
+
+  return { program_id: programId, status: 'purged' };
+}
+
 /**
  * Registry mapping tool names to their handler functions.
  */
@@ -1036,6 +1320,15 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
   program_create: handleProgramCreate,
   program_modify: handleProgramModify,
   program_activate: handleProgramActivate,
+  program_archive: handleProgramArchive,
+  program_delete: handleProgramDelete,
+
+  // Manual + agent edit/delete: sessions and exercise instances (Task 10)
+  session_update: handleSessionUpdate,
+  session_delete: handleSessionDelete,
+  exercise_instance_add: handleExerciseInstanceAdd,
+  exercise_instance_update: handleExerciseInstanceUpdate,
+  exercise_instance_remove: handleExerciseInstanceRemove,
 
   /**
    * journal_draft — Creates a journal entry with agent_drafted = true.
@@ -1628,6 +1921,52 @@ const toolHandlerRegistry: Record<string, ToolHandler> = {
    * engine can compare the latest HRV against a baseline.
    * Validates: Requirement 15.2
    */
+  /**
+   * get_exercises — Retrieval tool (auto-executes, read-only) that searches
+   * the user's allowed exercise catalog (global exercises + the user's own).
+   * The agent MUST call this before naming any exercise in program_create/
+   * program_modify so it only ever proposes names that actually resolve via
+   * `resolveExerciseIdOrThrow` (Requirements 2.1, 4.9).
+   */
+  get_exercises: async (supabase, userId, args) => {
+    const query = (args.query as string | undefined)?.trim();
+    const muscleGroup = args.muscle_group as string | undefined;
+    const equipment = args.equipment as string | undefined;
+    const limit = Math.min(Math.max((args.limit as number) ?? 20, 1), 100);
+
+    let q = supabase
+      .from('exercises')
+      .select('id, name, primary_muscle_group, equipment, level')
+      .or(`is_global.eq.true,user_id.eq.${userId}`)
+      .limit(limit);
+
+    if (query) {
+      q = q.ilike('name', `%${query}%`);
+    }
+    if (muscleGroup) {
+      q = q.eq('primary_muscle_group', muscleGroup);
+    }
+    if (equipment) {
+      q = q.eq('equipment', equipment);
+    }
+
+    const { data, error } = await q;
+
+    if (error) {
+      throw new Error(`Failed to search exercises: ${error.message}`);
+    }
+
+    return {
+      exercises: (data ?? []).map((row: Record<string, unknown>) => ({
+        id: row.id,
+        name: row.name,
+        primary_muscle_group: row.primary_muscle_group,
+        equipment: row.equipment,
+        level: row.level,
+      })),
+    };
+  },
+
   get_recovery_summary: async (supabase, userId, args) => {
     const days = (args.days as number) ?? 7;
     const sinceDate = new Date();

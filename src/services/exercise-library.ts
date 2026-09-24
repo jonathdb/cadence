@@ -14,6 +14,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+    normalizeExerciseForDisplay,
+    type ExerciseDisplayViewModel,
+    type ExerciseMediaRow,
+    type ExerciseRow,
+} from '@/services/exercise-display';
 import type { Exercise } from '@/types/exercise';
 
 export interface ExerciseSearchParams {
@@ -248,6 +254,76 @@ export async function getExerciseById(
   }
 
   return data as Exercise;
+}
+
+/** An exercise row plus its ordered demonstration media rows. */
+export interface ExerciseDetail {
+  exercise: ExerciseRow;
+  media: ExerciseMediaRow[];
+}
+
+/**
+ * Fetch a single exercise (global or the user's own) together with its
+ * `exercise_media` rows, for the exercise detail view.
+ *
+ * @param client - Supabase client (authenticated as the user)
+ * @param userId - The current user's ID
+ * @param exerciseId - The exercise to retrieve
+ * @throws ExerciseLibraryError if not found or not visible to the user
+ */
+export async function getExerciseDetail(
+  client: SupabaseClient,
+  userId: string,
+  exerciseId: string
+): Promise<ExerciseDetail> {
+  const { data: exercise, error: exerciseError } = await client
+    .from('exercises')
+    .select('*')
+    .eq('id', exerciseId)
+    .or(`is_global.eq.true,user_id.eq.${userId}`)
+    .single();
+
+  if (exerciseError || !exercise) {
+    throw new ExerciseLibraryError('Exercise not found', 'NOT_FOUND');
+  }
+
+  const { data: media, error: mediaError } = await client
+    .from('exercise_media')
+    .select('*')
+    .eq('exercise_id', exerciseId)
+    .order('order_index', { ascending: true });
+
+  if (mediaError) {
+    throw new ExerciseLibraryError(
+      `Failed to load exercise media: ${mediaError.message}`,
+      'DB_ERROR'
+    );
+  }
+
+  return {
+    exercise: exercise as ExerciseRow,
+    media: (media ?? []) as ExerciseMediaRow[],
+  };
+}
+
+/**
+ * Fetch a single exercise and return it already normalized into the detail
+ * view's non-optional view model (placeholders substituted, attribution
+ * computed). Thin composition of `getExerciseDetail` +
+ * `normalizeExerciseForDisplay` so screens never have to normalize inline.
+ *
+ * @param client - Supabase client (authenticated as the user)
+ * @param userId - The current user's ID
+ * @param exerciseId - The exercise to retrieve
+ * @throws ExerciseLibraryError if not found or not visible to the user
+ */
+export async function getExerciseDisplay(
+  client: SupabaseClient,
+  userId: string,
+  exerciseId: string
+): Promise<ExerciseDisplayViewModel> {
+  const { exercise, media } = await getExerciseDetail(client, userId, exerciseId);
+  return normalizeExerciseForDisplay(exercise, media);
 }
 
 /**

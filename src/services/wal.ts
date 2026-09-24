@@ -9,6 +9,8 @@
  */
 import { Platform } from 'react-native';
 
+import { randomUUID } from '@/utils/uuid';
+
 // Lazy-load expo-sqlite only on native platforms to avoid web .wasm resolution errors
 let SQLite: typeof import('expo-sqlite') | null = null;
 function getSQLite(): typeof import('expo-sqlite') {
@@ -29,7 +31,21 @@ export type WALOperation =
   | 'set_log'
   | 'set_edit'
   | 'set_delete'
-  | 'session_complete';
+  | 'session_complete'
+  // Manual + agent session edit/delete (Requirement 4.13 — see session-manager.ts).
+  // session_soft_delete sets sessions.deleted_at; it is never a hard DELETE
+  // so logged_sets survive (Requirement 4.12).
+  | 'session_update'
+  | 'session_soft_delete'
+  // Manual + agent exercise-instance edit/delete on program_day_items rows
+  // (Requirement 4.13 — see program-manager.ts / tool-handlers.ts).
+  | 'program_day_item_insert'
+  | 'program_day_item_update'
+  | 'program_day_item_delete'
+  // Program lifecycle ops (offline archive/hide/purge — see program-manager.ts)
+  | 'program_archive'
+  | 'program_hide'
+  | 'program_purge';
 
 export type WALStatus = 'pending' | 'syncing' | 'synced' | 'failed';
 
@@ -86,7 +102,7 @@ export class WALService {
 
       CREATE TABLE IF NOT EXISTS wal_entries (
         id TEXT PRIMARY KEY,
-        operation TEXT NOT NULL CHECK (operation IN ('session_start', 'set_log', 'set_edit', 'set_delete', 'session_complete')),
+        operation TEXT NOT NULL CHECK (operation IN ('session_start', 'set_log', 'set_edit', 'set_delete', 'session_complete', 'session_update', 'session_soft_delete', 'program_day_item_insert', 'program_day_item_update', 'program_day_item_delete', 'program_archive', 'program_hide', 'program_purge')),
         payload TEXT NOT NULL,
         table_name TEXT NOT NULL,
         record_id TEXT NOT NULL,
@@ -104,8 +120,69 @@ export class WALService {
       CREATE INDEX IF NOT EXISTS idx_wal_session_id ON wal_entries(session_id);
     `);
 
+    // Migrate the operation CHECK constraint on databases created before the
+    // program lifecycle ops or the session/exercise-instance edit ops were
+    // added. CREATE TABLE IF NOT EXISTS leaves the old CHECK in place, which
+    // would reject the newer op names, so rebuild the table when either
+    // constraint generation is detected as stale.
+    this.migrateOperationCheck();
+
     // Hydrate known session IDs from existing WAL entries
     this.hydrateKnownSessions();
+  }
+
+  /**
+   * Rebuild the wal_entries table when its `operation` CHECK constraint predates
+   * the program lifecycle ops or the session/exercise-instance edit ops.
+   * SQLite can't ALTER a CHECK, so detect the old definition in sqlite_master
+   * and, if the newest op names are missing, recreate the table (preserving
+   * all rows) with the widened constraint.
+   */
+  private migrateOperationCheck(): void {
+    const row = this.db.getFirstSync<{ sql: string }>(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'wal_entries'`
+    );
+
+    // If the current schema already allows the newest ops, nothing to do.
+    if (!row?.sql || row.sql.includes('program_day_item_insert')) {
+      return;
+    }
+
+    this.db.execSync(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN TRANSACTION;
+
+      ALTER TABLE wal_entries RENAME TO wal_entries_old;
+
+      CREATE TABLE wal_entries (
+        id TEXT PRIMARY KEY,
+        operation TEXT NOT NULL CHECK (operation IN ('session_start', 'set_log', 'set_edit', 'set_delete', 'session_complete', 'session_update', 'session_soft_delete', 'program_day_item_insert', 'program_day_item_update', 'program_day_item_delete', 'program_archive', 'program_hide', 'program_purge')),
+        payload TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        session_id TEXT,
+        exercise_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'syncing', 'synced', 'failed')),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        client_timestamp TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        synced_at TEXT
+      );
+
+      INSERT INTO wal_entries
+        SELECT id, operation, payload, table_name, record_id, session_id, exercise_id,
+               status, attempt_count, client_timestamp, created_at, synced_at
+        FROM wal_entries_old;
+
+      DROP TABLE wal_entries_old;
+
+      CREATE INDEX IF NOT EXISTS idx_wal_status ON wal_entries(status);
+      CREATE INDEX IF NOT EXISTS idx_wal_created ON wal_entries(created_at);
+      CREATE INDEX IF NOT EXISTS idx_wal_session_id ON wal_entries(session_id);
+
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
   }
 
   /**
@@ -183,6 +260,81 @@ export class WALService {
         );
       }
     }
+
+    // Program lifecycle ops target a `programs` row by record_id. They carry no
+    // session/exercise FK, but the target program id is required so the sync
+    // engine can address the row on replay.
+    const programOperations: WALOperation[] = [
+      'program_archive',
+      'program_hide',
+      'program_purge',
+    ];
+
+    if (programOperations.includes(input.operation)) {
+      if (!input.record_id || input.record_id.trim() === '') {
+        throw new ReferentialIntegrityError(
+          `Operation '${input.operation}' requires a program record_id but none was provided`
+        );
+      }
+
+      if (input.table_name !== 'programs') {
+        throw new ReferentialIntegrityError(
+          `Operation '${input.operation}' must target the 'programs' table (got '${input.table_name}')`
+        );
+      }
+    }
+
+    // Session edit/delete ops target a `sessions` row by record_id. The
+    // session must already be known (same requirement as set_log/set_edit/
+    // set_delete) so the sync engine can address a real row on replay.
+    const sessionEditOperations: WALOperation[] = ['session_update', 'session_soft_delete'];
+
+    if (sessionEditOperations.includes(input.operation)) {
+      if (!input.record_id || input.record_id.trim() === '') {
+        throw new ReferentialIntegrityError(
+          `Operation '${input.operation}' requires a session record_id but none was provided`
+        );
+      }
+
+      if (input.table_name !== 'sessions') {
+        throw new ReferentialIntegrityError(
+          `Operation '${input.operation}' must target the 'sessions' table (got '${input.table_name}')`
+        );
+      }
+
+      if (!this.isSessionKnown(input.record_id)) {
+        throw new ReferentialIntegrityError(
+          `Referential integrity violation: session_id '${input.record_id}' does not exist. ` +
+            `A 'session_start' entry must be enqueued or the session must be registered first.`
+        );
+      }
+    }
+
+    // Exercise-instance ops target a `program_day_items` row by record_id.
+    // For inserts, the caller pre-generates the id client-side (same
+    // convention as `session_start`) so the sync engine can address the
+    // exact row on replay; there is no "known instance ids" registry since
+    // instances are always created/edited/removed against an
+    // already-synced program.
+    const programDayItemOperations: WALOperation[] = [
+      'program_day_item_insert',
+      'program_day_item_update',
+      'program_day_item_delete',
+    ];
+
+    if (programDayItemOperations.includes(input.operation)) {
+      if (input.table_name !== 'program_day_items') {
+        throw new ReferentialIntegrityError(
+          `Operation '${input.operation}' must target the 'program_day_items' table (got '${input.table_name}')`
+        );
+      }
+
+      if (!input.record_id || input.record_id.trim() === '') {
+        throw new ReferentialIntegrityError(
+          `Operation '${input.operation}' requires a program_day_items record_id but none was provided`
+        );
+      }
+    }
   }
 
   /**
@@ -198,7 +350,7 @@ export class WALService {
     // Validate referential integrity
     this.validateReferentialIntegrity(input);
 
-    const id = crypto.randomUUID();
+    const id = randomUUID();
     const clientTimestamp = input.client_timestamp || new Date().toISOString();
     const payload = JSON.stringify(input.payload);
 

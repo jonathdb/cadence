@@ -7,7 +7,12 @@
  * Mirrors the ensure/get/update pattern in src/services/permissions.ts.
  */
 
-import type { UserProfile, UserProfileInput } from '@/types/profile';
+import type {
+    OnboardingStatus,
+    OnboardingValues,
+    UserProfile,
+    UserProfileInput
+} from '@/types/profile';
 import { supabase } from '@/utils/supabase';
 
 /**
@@ -83,4 +88,58 @@ export async function updateUserProfile(
   }
 
   return data as UserProfile;
+}
+
+/**
+ * Builds a `UserProfileInput` patch from the onboarding flow's collected
+ * values. Onboarding fields are a subset of `UserProfileInput`, so this is
+ * a pass-through — kept as its own function so the onboarding screen never
+ * has to reach into `UserProfileInput` directly and so untouched fields
+ * (omitted from `values`) are never included in the patch.
+ */
+export function buildOnboardingPatch(values: OnboardingValues): UserProfileInput {
+  return { ...values };
+}
+
+/**
+ * Records the resolved onboarding state (`completed` or `skipped`), or
+ * resets it to `pending` when a user opts to re-run onboarding from
+ * Settings. Persisted server-side so the state survives reinstall and
+ * cross-device login (Requirement 5.5).
+ */
+export async function setOnboardingStatus(
+  userId: string,
+  status: OnboardingStatus
+): Promise<void> {
+  await ensureUserProfile(userId);
+
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ onboarding_status: status, updated_at: new Date().toISOString() })
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Failed to update onboarding status: ${error.message}`);
+  }
+}
+
+/**
+ * Whether the first-run onboarding flow should be shown for this user.
+ * True only when the persisted status is still `pending` (Requirement 5.1);
+ * once `completed` or `skipped`, it never reshows automatically.
+ */
+export async function shouldShowOnboarding(userId: string): Promise<boolean> {
+  await ensureUserProfile(userId);
+
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('onboarding_status')
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to check onboarding status: ${error.message}`);
+  }
+
+  return (data?.onboarding_status as OnboardingStatus | null) === 'pending';
 }

@@ -21,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import { cloneTemplate, getTemplateBySlug, unpublishTemplate } from '@/services/template-service';
 import type { ProgramTemplate } from '@/types/template';
@@ -29,6 +30,7 @@ import { supabase } from '@/utils/supabase';
 export default function TemplatePreviewScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const dockClearance = useTabBarClearance();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { session, user } = useAuth();
 
@@ -129,7 +131,7 @@ export default function TemplatePreviewScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: dockClearance + 96 }]}>
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="headlineMedium">{template.title}</ThemedText>
@@ -183,7 +185,7 @@ export default function TemplatePreviewScreen() {
       </ScrollView>
 
       {/* Footer Buttons */}
-      <View style={[styles.footer, { borderTopColor: theme.border }]}>
+      <View style={[styles.footer, { borderTopColor: theme.border, paddingBottom: dockClearance }]}>
         {user && template.author_id === user.id && (
           <Pressable
             style={[styles.cloneButton, { backgroundColor: theme.error, marginBottom: 8 }]}
@@ -217,7 +219,7 @@ export default function TemplatePreviewScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  scroll: { padding: Spacing.four, paddingBottom: 100 },
+  scroll: { padding: Spacing.four },
   header: { marginBottom: Spacing.four },
   metaRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
   tagRow: { flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' },

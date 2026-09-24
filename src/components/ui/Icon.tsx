@@ -48,6 +48,8 @@ export type IconName =
   | 'trend-flat'
   | 'grid'
   | 'library'
+  | 'edit'
+  | 'trash'
   | 'send';
 
 const GLYPHS: Record<IconName, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -91,6 +93,8 @@ const GLYPHS: Record<IconName, React.ComponentProps<typeof Ionicons>['name']> = 
   'trend-flat': 'remove',
   grid: 'grid-outline',
   library: 'library-outline',
+  edit: 'create-outline',
+  trash: 'trash-outline',
   send: 'arrow-up',
 };
 

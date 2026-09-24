@@ -1,0 +1,580 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Create migration `20250101000019` — exercises enrichment + `exercise_media` table": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737105132
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737126145
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737398819
+      }
+    ],
+    "1.2 Extend migration `20250101000019` — programs, sessions, user_profiles, user_settings columns": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737105321
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737415202
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737487758
+      }
+    ],
+    "1.3 Create migration `20250101000020` — `exercise-media` Storage bucket + read policy": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737105451
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737127610
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737400030
+      }
+    ],
+    "1.4 Apply migrations and regenerate database types": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737105575
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737496752
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737668983
+      }
+    ],
+    "2. Checkpoint — schema baseline": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737105710
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737686519
+      }
+    ],
+    "3. Exercise library: import pipeline, mapper, and provenance": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737105848
+      }
+    ],
+    "3.1 Implement free-exercise-db field mapper (pure)": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737106003
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738093771
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738515466
+      }
+    ],
+    "3.3 Implement the one-time import script `scripts/import-free-exercise-db.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737106215
+      }
+    ],
+    "4.1 Implement exercise display normalizer + attribution mapper (pure) in `src/services/exercise-display.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737106483
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737715087
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738068628
+      }
+    ],
+    "4.4 Extend `src/services/exercise-library.ts` to load new fields + media": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737106668
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738537125
+      },
+      {
+        "executionId": "8e5b0f62-22e8-4586-947b-1fa22af02bf0",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789970883116
+      }
+    ],
+    "4.5 Implement `src/components/exercise/ExerciseMedia.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737106854
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738096805
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738518557
+      }
+    ],
+    "4.6 Build the text-first exercise detail view": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737107022
+      }
+    ],
+    "5.1 Implement `resolveExerciseIdOrThrow` in `supabase/functions/_shared/tool-handlers.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737107206
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737716448
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738070662
+      }
+    ],
+    "5.3 Wire `resolveExerciseIdOrThrow` into exercise-referencing tools": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737107389
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738095354
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738516874
+      }
+    ],
+    "5.4 Add the `get_exercises` retrieval tool": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737107564
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738540498
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971258046
+      }
+    ],
+    "5.5 Update the agent system prompt in `supabase/functions/agent-chat/index.ts` `getSystemPrompt()`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737107737
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971272811
+      }
+    ],
+    "6. Checkpoint — exercise library + grounding": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737107925
+      }
+    ],
+    "7.1 Implement `src/hooks/useTabBarClearance.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737108106
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737129199
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737402802
+      }
+    ],
+    "7.3 Implement `src/components/ui/DockSpacer.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737108288
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737499331
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737671761
+      }
+    ],
+    "7.4 Apply clearance to the Start session fixed footer in `src/app/(tabs)/session/[dayId].tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737108460
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737718345
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738071972
+      }
+    ],
+    "7.5 Apply clearance to the Agent permissions screen `src/app/(tabs)/settings/permissions.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737108668
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738539044
+      },
+      {
+        "executionId": "8e5b0f62-22e8-4586-947b-1fa22af02bf0",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789970880907
+      }
+    ],
+    "7.6 Apply clearance across remaining audited `(tabs)` screens": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737108844
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971284027
+      }
+    ],
+    "8.1 Extend `src/services/program-manager.ts` with archive/hide/purge/list": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737109022
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737719783
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738073461
+      }
+    ],
+    "8.4 Add program delete/archive/hide affordances in `src/app/(tabs)/program/library.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737109248
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738098473
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738519691
+      }
+    ],
+    "8.5 Add program delete affordance in `program/edit/[programId].tsx` and `program/index.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737109468
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738541891
+      },
+      {
+        "executionId": "8e5b0f62-22e8-4586-947b-1fa22af02bf0",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789970881793
+      }
+    ],
+    "8.6 Wire program delete to offline WAL + local cache": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737109680
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971274659
+      }
+    ],
+    "9. Checkpoint — dock clearance + program delete": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737109892
+      }
+    ],
+    "10.1 Add mutating tool definitions in `_shared/tool-definitions.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737110076
+      }
+    ],
+    "10.2 Implement handlers in `_shared/tool-handlers.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737110270
+      }
+    ],
+    "10.3 Map new tools in `TOOL_PERMISSION_MAP` (`_shared/tool-executor.ts`)": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737110436
+      }
+    ],
+    "11.1 Add session edit/delete affordances on session screens": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737110581
+      }
+    ],
+    "11.2 Add exercise-instance edit/delete affordances on program day / session screens": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737110716
+      }
+    ],
+    "11.3 Render agent approval + rejection for the new mutating tools in `src/app/(tabs)/chat/index.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737110845
+      }
+    ],
+    "11.4 Extend WAL + sync for new entity op types": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111055
+      }
+    ],
+    "12. Checkpoint — manual + agent edit/delete": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111266
+      }
+    ],
+    "13.1 Extend `src/services/profile.ts` for onboarding state + patch logic": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111412
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737720917
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738074706
+      }
+    ],
+    "13.5 Build the multi-step skippable onboarding flow in `src/app/onboarding/`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111530
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738543290
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971259353
+      }
+    ],
+    "13.6 Add the login-time onboarding gate in the authenticated layout": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111660
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971275495
+      }
+    ],
+    "13.7 Add \"Re-run onboarding\" action in `src/app/(tabs)/settings/profile.tsx`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111801
+      },
+      {
+        "executionId": "330a2bde-64b5-4957-9dca-a92a73103468",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789971277151
+      }
+    ],
+    "14.1 Implement pure selection/gating helpers in `src/services/model-catalog.ts`": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737111915
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737130736
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737401462
+      }
+    ],
+    "14.5 (Optional) Make `list-models` recency order deterministic": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737112029
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737499736
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737508316
+      }
+    ],
+    "14.6 Rework `src/components/ModelPicker.tsx` for scroll + collapse + cap": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737112160
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738099834
+      },
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789738522595
+      }
+    ],
+    "15.1 Author a manual verification checklist document under the spec folder": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737112298
+      }
+    ],
+    "16. Final checkpoint — ensure all tests pass": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737112430
+      }
+    ],
+    "1. Foundational database migrations (schema for all six areas)": [
+      {
+        "executionId": "b4edc94e-a777-4a27-961c-9ade97ce72bf",
+        "chatSessionId": "sess_e4f79138-b566-43cd-a8b9-4f162f3d16d3",
+        "timestamp": 1789737670648
+      }
+    ]
+  }
+}

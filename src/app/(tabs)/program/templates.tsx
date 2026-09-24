@@ -21,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { browseTemplates } from '@/services/template-service';
 import type { TemplateCard } from '@/types/template';
 import { supabase } from '@/utils/supabase';
@@ -28,6 +29,7 @@ import { supabase } from '@/utils/supabase';
 export default function BrowseTemplatesScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const dockClearance = useTabBarClearance();
 
   const [templates, setTemplates] = useState<TemplateCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -140,7 +142,7 @@ export default function BrowseTemplatesScreen() {
           data={templates}
           renderItem={renderItem}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: dockClearance }]}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           ListEmptyComponent={

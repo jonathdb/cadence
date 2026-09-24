@@ -22,6 +22,11 @@ export interface ProgramListFilter {
   status?: ProgramStatus;
   limit?: number; // default 50
   offset?: number; // default 0
+  /**
+   * When false (default), programs with `hidden = true` are excluded from
+   * the result. Set true to include them (e.g. a "Show hidden" toggle).
+   */
+  includeHidden?: boolean;
 }
 
 export class ProgramManagerError extends Error {
@@ -191,6 +196,10 @@ export async function listPrograms(
     query = query.eq('status', filter.status);
   }
 
+  if (!filter.includeHidden) {
+    query = query.eq('hidden', false);
+  }
+
   const { data, error } = await query;
 
   if (error) {
@@ -201,6 +210,115 @@ export async function listPrograms(
   }
 
   return (data ?? []).map(mapProgramRow);
+}
+
+/**
+ * Sets a program's `hidden` flag. Used to declutter the archived list
+ * without destroying the program or its history.
+ *
+ * @param client - Supabase client (authenticated as the user)
+ * @param userId - The current user's ID
+ * @param programId - The program to hide/unhide
+ * @param hidden - The new hidden value
+ * @returns The updated program
+ * @throws ProgramManagerError if the program is not found
+ */
+export async function setProgramHidden(
+  client: SupabaseClient,
+  userId: string,
+  programId: string,
+  hidden: boolean
+): Promise<Program> {
+  if (!programId || programId.trim() === '') {
+    throw new ProgramManagerError(
+      'Program ID is required',
+      'VALIDATION_ERROR'
+    );
+  }
+
+  const { data, error } = await client
+    .from('programs')
+    .update({ hidden, updated_at: new Date().toISOString() })
+    .eq('id', programId)
+    .eq('user_id', userId)
+    .select(
+      `
+      *,
+      program_days (
+        *,
+        program_day_items (*)
+      )
+    `
+    )
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      throw new ProgramManagerError(
+        'Program not found or not owned by user',
+        'NOT_FOUND'
+      );
+    }
+    throw new ProgramManagerError(
+      `Failed to update program: ${error.message}`,
+      'DB_ERROR'
+    );
+  }
+
+  if (!data) {
+    throw new ProgramManagerError(
+      'Program not found or not owned by user',
+      'NOT_FOUND'
+    );
+  }
+
+  return mapProgramRow(data);
+}
+
+/**
+ * Permanently deletes a program and its structure (days, items).
+ *
+ * Logged workout history that references this program (via
+ * `sessions.program_day_id`) is preserved: the FK is `ON DELETE SET NULL`,
+ * so past sessions simply lose their program-day link rather than being
+ * deleted (Requirement 3.3 — history survives a purge).
+ *
+ * @param client - Supabase client (authenticated as the user)
+ * @param userId - The current user's ID
+ * @param programId - The program to permanently delete
+ * @throws ProgramManagerError if the program is not found
+ */
+export async function purgeProgram(
+  client: SupabaseClient,
+  userId: string,
+  programId: string
+): Promise<void> {
+  if (!programId || programId.trim() === '') {
+    throw new ProgramManagerError(
+      'Program ID is required',
+      'VALIDATION_ERROR'
+    );
+  }
+
+  const { error, count } = await client
+    .from('programs')
+    .delete({ count: 'exact' })
+    .eq('id', programId)
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new ProgramManagerError(
+      `Failed to delete program: ${error.message}`,
+      'DB_ERROR'
+    );
+  }
+
+  if (!count) {
+    throw new ProgramManagerError(
+      'Program not found or not owned by user',
+      'NOT_FOUND'
+    );
+  }
 }
 
 /**
@@ -318,6 +436,7 @@ function mapProgramRow(row: Record<string, unknown>): Program {
     user_id: row.user_id as string,
     name: row.name as string,
     status: row.status as Program['status'],
+    hidden: row.hidden as boolean,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
     modification_history: [], // fetched separately when needed

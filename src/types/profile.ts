@@ -49,6 +49,44 @@ export type UserProfileInput = Partial<
   >
 >;
 
+/**
+ * First-run onboarding status, persisted server-side on `user_profiles`
+ * (Requirement 5.5) so the flow survives reinstall / cross-device login and
+ * never reshows once resolved.
+ */
+export type OnboardingStatus = 'pending' | 'completed' | 'skipped';
+
+/** The subset of profile fields the onboarding flow collects. */
+export type OnboardingField =
+  | 'goal'
+  | 'experience_level'
+  | 'bodyweight'
+  | 'bodyweight_unit'
+  | 'weekly_frequency'
+  | 'preferred_training_days'
+  | 'equipment'
+  | 'injuries'
+  | 'training_notes';
+
+export const ONBOARDING_FIELDS: OnboardingField[] = [
+  'goal',
+  'experience_level',
+  'bodyweight',
+  'bodyweight_unit',
+  'weekly_frequency',
+  'preferred_training_days',
+  'equipment',
+  'injuries',
+  'training_notes',
+];
+
+/**
+ * Values entered during onboarding. Every field is optional (Requirement
+ * 5.2) — only keys the user actually touched should be included, so a
+ * partial submission never clears untouched profile fields.
+ */
+export type OnboardingValues = Partial<Pick<UserProfile, OnboardingField>>;
+
 export const TRAINING_GOALS: TrainingGoal[] = [
   'strength',
   'hypertrophy',

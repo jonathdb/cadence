@@ -210,40 +210,105 @@ export type Database = {
         }
         Relationships: []
       }
-      exercises: {
+      exercise_media: {
         Row: {
           created_at: string | null
+          exercise_id: string
+          id: string
+          kind: string
+          order_index: number
+          public_url: string | null
+          storage_path: string
+        }
+        Insert: {
+          created_at?: string | null
+          exercise_id: string
+          id?: string
+          kind: string
+          order_index?: number
+          public_url?: string | null
+          storage_path: string
+        }
+        Update: {
+          created_at?: string | null
+          exercise_id?: string
+          id?: string
+          kind?: string
+          order_index?: number
+          public_url?: string | null
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_media_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exercises: {
+        Row: {
+          category: string | null
+          created_at: string | null
+          description: string | null
           equipment: string | null
+          explanation: string | null
+          external_ref: string | null
+          force: string | null
           id: string
           instructions: string | null
           is_global: boolean | null
+          level: string | null
+          mechanic: string | null
           name: string
           primary_muscle_group: string
           secondary_muscle_groups: string[] | null
+          source: string | null
+          source_license: string | null
           updated_at: string | null
           user_id: string | null
         }
         Insert: {
+          category?: string | null
           created_at?: string | null
+          description?: string | null
           equipment?: string | null
+          explanation?: string | null
+          external_ref?: string | null
+          force?: string | null
           id?: string
           instructions?: string | null
           is_global?: boolean | null
+          level?: string | null
+          mechanic?: string | null
           name: string
           primary_muscle_group: string
           secondary_muscle_groups?: string[] | null
+          source?: string | null
+          source_license?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
         Update: {
+          category?: string | null
           created_at?: string | null
+          description?: string | null
           equipment?: string | null
+          explanation?: string | null
+          external_ref?: string | null
+          force?: string | null
           id?: string
           instructions?: string | null
           is_global?: boolean | null
+          level?: string | null
+          mechanic?: string | null
           name?: string
           primary_muscle_group?: string
           secondary_muscle_groups?: string[] | null
+          source?: string | null
+          source_license?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -558,6 +623,7 @@ export type Database = {
       logged_sets: {
         Row: {
           actual_duration_seconds: number | null
+          distance_meters: number | null
           exercise_id: string
           id: string
           is_pr: boolean | null
@@ -572,6 +638,7 @@ export type Database = {
         }
         Insert: {
           actual_duration_seconds?: number | null
+          distance_meters?: number | null
           exercise_id: string
           id?: string
           is_pr?: boolean | null
@@ -586,6 +653,7 @@ export type Database = {
         }
         Update: {
           actual_duration_seconds?: number | null
+          distance_meters?: number | null
           exercise_id?: string
           id?: string
           is_pr?: boolean | null
@@ -715,6 +783,7 @@ export type Database = {
           target_weight: number | null
           timer_config: Json | null
           type: string
+          updated_at: string
         }
         Insert: {
           block_id?: string | null
@@ -729,6 +798,7 @@ export type Database = {
           target_weight?: number | null
           timer_config?: Json | null
           type: string
+          updated_at?: string
         }
         Update: {
           block_id?: string | null
@@ -743,6 +813,7 @@ export type Database = {
           target_weight?: number | null
           timer_config?: Json | null
           type?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -845,6 +916,7 @@ export type Database = {
       programs: {
         Row: {
           created_at: string | null
+          hidden: boolean
           id: string
           name: string
           status: string
@@ -853,6 +925,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          hidden?: boolean
           id?: string
           name: string
           status?: string
@@ -861,6 +934,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          hidden?: boolean
           id?: string
           name?: string
           status?: string
@@ -938,32 +1012,41 @@ export type Database = {
       sessions: {
         Row: {
           completed_at: string | null
+          deleted_at: string | null
           id: string
+          notes: string | null
           program_day_id: string | null
           route_id: string | null
           started_at: string | null
           status: string
           total_duration_seconds: number | null
+          updated_at: string
           user_id: string
         }
         Insert: {
           completed_at?: string | null
+          deleted_at?: string | null
           id?: string
+          notes?: string | null
           program_day_id?: string | null
           route_id?: string | null
           started_at?: string | null
           status?: string
           total_duration_seconds?: number | null
+          updated_at?: string
           user_id: string
         }
         Update: {
           completed_at?: string | null
+          deleted_at?: string | null
           id?: string
+          notes?: string | null
           program_day_id?: string | null
           route_id?: string | null
           started_at?: string | null
           status?: string
           total_duration_seconds?: number | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -1105,6 +1188,7 @@ export type Database = {
           goal: string | null
           id: string
           injuries: string | null
+          onboarding_status: string
           preferred_training_days: string[]
           training_notes: string | null
           updated_at: string | null
@@ -1120,6 +1204,7 @@ export type Database = {
           goal?: string | null
           id?: string
           injuries?: string | null
+          onboarding_status?: string
           preferred_training_days?: string[]
           training_notes?: string | null
           updated_at?: string | null
@@ -1135,6 +1220,7 @@ export type Database = {
           goal?: string | null
           id?: string
           injuries?: string | null
+          onboarding_status?: string
           preferred_training_days?: string[]
           training_notes?: string | null
           updated_at?: string | null
@@ -1153,6 +1239,7 @@ export type Database = {
           permission_health_access: string
           permission_journal_edits: string
           permission_program_edits: string
+          permission_session_edits: string
           permission_spotify_actions: string
           preferred_ai_provider: string
           preferred_model: string | null
@@ -1170,6 +1257,7 @@ export type Database = {
           permission_health_access?: string
           permission_journal_edits?: string
           permission_program_edits?: string
+          permission_session_edits?: string
           permission_spotify_actions?: string
           preferred_ai_provider?: string
           preferred_model?: string | null
@@ -1187,6 +1275,7 @@ export type Database = {
           permission_health_access?: string
           permission_journal_edits?: string
           permission_program_edits?: string
+          permission_session_edits?: string
           permission_spotify_actions?: string
           preferred_ai_provider?: string
           preferred_model?: string | null

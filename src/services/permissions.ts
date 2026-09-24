@@ -9,6 +9,7 @@
  * - journal_edits: drafting/editing journal entries
  * - spotify_actions: playlist search, creation, modification
  * - health_access: reading/writing health data
+ * - session_edits: updating/deleting logged workout sessions
  *
  * All categories default to 'approval_required' on new account creation.
  */
@@ -24,6 +25,7 @@ const CATEGORY_TO_COLUMN: Record<PermissionCategory, string> = {
   journal_edits: 'permission_journal_edits',
   spotify_actions: 'permission_spotify_actions',
   health_access: 'permission_health_access',
+  session_edits: 'permission_session_edits',
 };
 
 /**
@@ -34,6 +36,7 @@ export const ALL_PERMISSION_CATEGORIES: PermissionCategory[] = [
   'journal_edits',
   'spotify_actions',
   'health_access',
+  'session_edits',
 ];
 
 /**
@@ -72,6 +75,7 @@ export async function ensureUserSettings(userId: string): Promise<void> {
       permission_journal_edits: DEFAULT_PERMISSION_MODE,
       permission_spotify_actions: DEFAULT_PERMISSION_MODE,
       permission_health_access: DEFAULT_PERMISSION_MODE,
+      permission_session_edits: DEFAULT_PERMISSION_MODE,
     });
 
   if (insertError) {
@@ -98,7 +102,7 @@ export async function getUserPermissions(
   const { data, error } = await supabase
     .from('user_settings')
     .select(
-      'permission_program_edits, permission_journal_edits, permission_spotify_actions, permission_health_access'
+      'permission_program_edits, permission_journal_edits, permission_spotify_actions, permission_health_access, permission_session_edits'
     )
     .eq('user_id', userId)
     .single();
@@ -112,6 +116,7 @@ export async function getUserPermissions(
     journal_edits: data.permission_journal_edits as PermissionMode,
     spotify_actions: data.permission_spotify_actions as PermissionMode,
     health_access: data.permission_health_access as PermissionMode,
+    session_edits: data.permission_session_edits as PermissionMode,
   };
 }
 

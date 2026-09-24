@@ -17,7 +17,6 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LastSessionCard } from '@/components/LastSessionCard';
 import { ThemedText } from '@/components/themed-text';
@@ -26,8 +25,9 @@ import { Badge } from '@/components/ui/Badge';
 import { GhostButton } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Icon } from '@/components/ui/Icon';
-import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/utils/supabase';
 
@@ -69,7 +69,7 @@ export default function ProgramScreen() {
   const { session } = useAuth();
   const router = useRouter();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const dockClearance = useTabBarClearance();
   const [program, setProgram] = useState<ProgramData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -155,6 +155,25 @@ export default function ProgramScreen() {
         >
           <ThemedText type="linkPrimary">View Program Library</ThemedText>
         </Pressable>
+        <Pressable
+          style={styles.libraryLink}
+          onPress={() => router.push('/(tabs)/program/library')}
+          accessibilityRole="button"
+          accessibilityLabel="Browse exercise library"
+        >
+          <ThemedText type="linkPrimary">Browse Exercise Library</ThemedText>
+        </Pressable>
+        <Pressable
+          style={[styles.createProgramButton, { backgroundColor: theme.accent }]}
+          onPress={() => router.push('/(tabs)/program/edit/new')}
+          accessibilityRole="button"
+          accessibilityLabel="Create new program"
+        >
+          <Icon name="add" size={18} color={theme.accentText} />
+          <ThemedText style={{ color: theme.accentText, fontWeight: '600' }}>
+            Create New Program
+          </ThemedText>
+        </Pressable>
       </ThemedView>
     );
   }
@@ -172,7 +191,7 @@ export default function ProgramScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: TabBarClearance + insets.bottom },
+          { paddingBottom: dockClearance },
         ]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />}
       >
@@ -220,6 +239,28 @@ export default function ProgramScreen() {
               icon={<Icon name="grid" size={18} color={theme.text} />}
               style={styles.phaseActionBtn}
               onPress={() => router.push('/(tabs)/program/templates')}
+            />
+          </View>
+          <View style={styles.phaseActions}>
+            <GhostButton
+              label="Exercise Library"
+              icon={<Icon name="dumbbell" size={18} color={theme.text} />}
+              style={styles.phaseActionBtn}
+              onPress={() => router.push('/(tabs)/program/library')}
+            />
+            <GhostButton
+              label="Edit Program"
+              icon={<Icon name="edit" size={18} color={theme.text} />}
+              style={styles.phaseActionBtn}
+              onPress={() => router.push(`/(tabs)/program/edit/${program.id}`)}
+            />
+          </View>
+          <View style={styles.phaseActions}>
+            <GhostButton
+              label="Create New Program"
+              icon={<Icon name="add" size={18} color={theme.text} />}
+              style={styles.phaseActionBtn}
+              onPress={() => router.push('/(tabs)/program/edit/new')}
             />
           </View>
         </GlassCard>
@@ -414,5 +455,15 @@ const styles = StyleSheet.create({
   },
   libraryLink: {
     marginTop: Spacing.three,
+  },
+  createProgramButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.four,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.twoHalf,
+    borderRadius: Radii.medium,
+    minHeight: 48,
   },
 });

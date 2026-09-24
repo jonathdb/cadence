@@ -15,6 +15,7 @@ import { create, type StateCreator } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
 
 import { getWAL, type EnqueueInput } from '@/services/wal';
+import { randomUUID } from '@/utils/uuid';
 
 // ─── Domain Types ────────────────────────────────────────────────────────────
 
@@ -50,6 +51,10 @@ export interface Session {
   status: string;
   startedAt: string;
   completedAt?: string | null;
+  /** Session-level notes, editable by the user or the agent (Requirement 4.2). */
+  notes?: string | null;
+  /** Soft-delete marker; non-null hides the session from lists (Requirement 4.12). */
+  deletedAt?: string | null;
   sets: LoggedSet[];
 }
 
@@ -138,6 +143,8 @@ export interface CadenceStoreActions {
   editSet: (setId: string, sessionId: string, data: Partial<LoggedSetData>) => void;
   deleteSet: (setId: string, sessionId: string, exerciseId: string) => void;
   completeSession: (sessionId: string) => void;
+  updateSessionNotes: (sessionId: string, notes: string) => void;
+  removeSession: (sessionId: string) => void;
 
   // Exercise library
   setExercises: (exercises: Exercise[]) => void;
@@ -233,6 +240,15 @@ function writeWALEntry(
   operationDescription: string,
   get: () => CadenceStore
 ): string {
+  // The WAL is a native-only offline queue (SQLite-backed); it is never
+  // initialized on web (see initWAL()). On web the calling screens write to
+  // Supabase directly, so skip the WAL entirely and return a synthetic id.
+  // Without this guard, getWAL() throws "WAL service not initialized" and
+  // breaks otherwise-valid web mutations (e.g. completing a session).
+  if (Platform.OS === 'web') {
+    return `web-noop-${Date.now()}`;
+  }
+
   const wal = getWAL();
   const entryId = wal.enqueue(input);
 
@@ -279,7 +295,7 @@ const storeCreator: StateCreator<CadenceStore, [], []> = (set, get, api) => ({
   },
 
   startSession: (programDayId) => {
-    const sessionId = crypto.randomUUID();
+    const sessionId = randomUUID();
     const now = new Date().toISOString();
 
     // Capture pre-mutation state for rollback
@@ -347,7 +363,7 @@ const storeCreator: StateCreator<CadenceStore, [], []> = (set, get, api) => ({
   },
 
   logSet: (sessionId, exerciseId, data) => {
-    const setId = crypto.randomUUID();
+    const setId = randomUUID();
     const now = new Date().toISOString();
 
     // Capture pre-mutation state for rollback
@@ -680,6 +696,93 @@ const storeCreator: StateCreator<CadenceStore, [], []> = (set, get, api) => ({
     });
 
     // Update sync status
+    get().updateSyncStatus();
+  },
+
+  updateSessionNotes: (sessionId, notes) => {
+    const now = new Date().toISOString();
+
+    // Capture pre-mutation state for rollback
+    const snapshot: Partial<CadenceStoreState> = {
+      recentSessions: [...get().recentSessions],
+    };
+
+    // Optimistic update
+    set((state) => ({
+      recentSessions: state.recentSessions.map((s) =>
+        s.id === sessionId ? { ...s, notes } : s
+      ),
+    }));
+
+    // Write WAL entry
+    const entryId = writeWALEntry(
+      {
+        operation: 'session_update',
+        payload: { notes },
+        table_name: 'sessions',
+        record_id: sessionId,
+        session_id: sessionId,
+        client_timestamp: now,
+      },
+      snapshot,
+      `Update notes for session ${sessionId}`,
+      get
+    );
+
+    // Store the snapshot in state
+    set((state) => {
+      const snapshots = new Map(state._rollbackSnapshots);
+      snapshots.set(entryId, {
+        entryId,
+        stateSlice: snapshot,
+        operationDescription: `Update notes for session ${sessionId}`,
+      });
+      return { _rollbackSnapshots: snapshots };
+    });
+
+    get().updateSyncStatus();
+  },
+
+  removeSession: (sessionId) => {
+    const now = new Date().toISOString();
+
+    // Capture pre-mutation state for rollback
+    const snapshot: Partial<CadenceStoreState> = {
+      recentSessions: [...get().recentSessions],
+    };
+
+    // Optimistic update: soft-delete removes it from the visible list
+    // immediately; logged_sets are untouched server-side (Requirement 4.12).
+    set((state) => ({
+      recentSessions: state.recentSessions.filter((s) => s.id !== sessionId),
+    }));
+
+    // Write WAL entry
+    const entryId = writeWALEntry(
+      {
+        operation: 'session_soft_delete',
+        payload: { deleted_at: now },
+        table_name: 'sessions',
+        record_id: sessionId,
+        session_id: sessionId,
+        client_timestamp: now,
+      },
+      snapshot,
+      `Delete session ${sessionId}`,
+      get
+    );
+
+    // Store the snapshot in state
+    set((state) => {
+      const snapshots = new Map(state._rollbackSnapshots);
+      snapshots.set(entryId, {
+        entryId,
+        stateSlice: snapshot,
+        operationDescription: `Delete session ${sessionId}`,
+      });
+      return { _rollbackSnapshots: snapshots };
+    });
+
     get().updateSyncStatus();
   },
 

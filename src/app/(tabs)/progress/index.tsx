@@ -14,16 +14,15 @@ import {
 } from 'react-native';
 
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { ChartTableToggle } from '@/components/charts/ChartTableToggle';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Icon } from '@/components/ui/Icon';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
-import { Spacing, TabBarClearance } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { calculateVolumeByMuscleGroup } from '@/services/volume-calculator';
 import type { Exercise } from '@/types/exercise';
 import type { LoggedSet } from '@/types/session';
@@ -121,7 +120,7 @@ export default function ProgressScreen() {
   const [showVolumeTable, setShowVolumeTable] = useState(false);
   const [showFrequencyTable, setShowFrequencyTable] = useState(false);
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const dockClearance = useTabBarClearance();
 
   const fetchData = useCallback(async (window: TimeWindow) => {
     try {
@@ -298,7 +297,7 @@ export default function ProgressScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: TabBarClearance + insets.bottom },
+          { paddingBottom: dockClearance },
         ]}
       >
         {/* Timeframe selector — Requirement 13.2 */}

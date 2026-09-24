@@ -20,7 +20,8 @@ export type PermissionCategory =
   | 'program_edits'
   | 'journal_edits'
   | 'spotify_actions'
-  | 'health_access';
+  | 'health_access'
+  | 'session_edits';
 
 export type PermissionMode = 'approval_required' | 'auto_apply';
 
@@ -73,6 +74,21 @@ const TOOL_PERMISSION_MAP: Record<string, PermissionCategory> = {
   get_cardio_analytics: 'health_access',
   suggest_progression: 'program_edits',
   critique_program: 'program_edits',
+  // Retrieval tool backing exercise catalog grounding (Requirements 2.1,
+  // 4.9) — read-only, auto-executes like the other get_* tools.
+  get_exercises: 'program_edits',
+  // Manual + agent edit/delete (Task 10). Session mutations get their own
+  // approval category (permission_session_edits, migration 19) so users can
+  // gate them independently of program edits. Exercise-instance and program
+  // lifecycle tools mutate program structure, so they fall under the
+  // existing program_edits category alongside program_create/modify.
+  session_update: 'session_edits',
+  session_delete: 'session_edits',
+  exercise_instance_add: 'program_edits',
+  exercise_instance_update: 'program_edits',
+  exercise_instance_remove: 'program_edits',
+  program_archive: 'program_edits',
+  program_delete: 'program_edits',
 };
 
 /**
@@ -83,6 +99,7 @@ const PERMISSION_COLUMN_MAP: Record<string, string> = {
   journal_edits: 'permission_journal_edits',
   spotify_actions: 'permission_spotify_actions',
   health_access: 'permission_health_access',
+  session_edits: 'permission_session_edits',
 };
 
 // --- Core Execution ---

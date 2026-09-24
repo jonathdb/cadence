@@ -131,7 +131,10 @@ export class SyncEngine {
    * Transmit a single WAL entry to Supabase.
    *
    * For INSERT/UPDATE: checks for conflicts via last-write-wins, then upserts.
-   * For DELETE: removes the record from Supabase.
+   * (Program archive/hide replay here as partial-column updates on the
+   * `programs` row — e.g. `{ status: 'archived' }` or `{ hidden: true }`.)
+   * For DELETE: removes the record from Supabase (program purge hard-deletes
+   * the `programs` row; RLS scopes both update and delete to the owner).
    */
   async transmitEntry(entry: WALEntry): Promise<TransmitResult> {
     try {
@@ -290,11 +293,30 @@ export class SyncEngine {
     switch (operation) {
       case 'session_start':
       case 'set_log':
+      // Exercise instances are added to an already-synced program day.
+      case 'program_day_item_insert':
         return 'INSERT';
       case 'set_edit':
       case 'session_complete':
+      // Program archive/hide are partial column updates on the programs row.
+      case 'program_archive':
+      case 'program_hide':
+      // Session edits and exercise-instance edits are partial column updates.
+      case 'session_update':
+      case 'program_day_item_update':
+        return 'UPDATE';
+      // session_soft_delete sets sessions.deleted_at — an UPDATE, never a hard
+      // DELETE, so logged_sets survive (Requirement 4.12).
+      case 'session_soft_delete':
         return 'UPDATE';
       case 'set_delete':
+      // Purge is a hard delete of the programs row (history preserved by the
+      // ON DELETE SET NULL FK on sessions.program_day_id — see program-manager).
+      case 'program_purge':
+      // Removing an exercise instance is a hard delete of the program_day_items
+      // row; logged_sets reference exercises + sessions, not the item, so
+      // history is inherently preserved (Requirement 4.12).
+      case 'program_day_item_delete':
         return 'DELETE';
       default:
         return 'INSERT';

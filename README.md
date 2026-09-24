@@ -114,7 +114,9 @@ src/
 supabase/
   functions/        # Edge Functions (agent-chat, store-api-key, delete-account)
   migrations/       # Database schema
-  seed.sql          # Global exercise library
+
+scripts/
+  import-free-exercise-db.ts  # Populates the global exercise catalog (free-exercise-db)
 
 tests/
   unit/             # 306 unit tests (vitest)

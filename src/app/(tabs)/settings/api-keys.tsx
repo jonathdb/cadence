@@ -21,6 +21,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import { supabase } from '@/utils/supabase';
 
@@ -34,6 +35,7 @@ interface KeyStatus {
 export default function ApiKeysScreen() {
   const { session } = useAuth();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const [openaiKey, setOpenaiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -123,7 +125,7 @@ export default function ApiKeysScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         <View style={styles.section}>
           <ThemedText type="small" themeColor="textSecondary">
             Enter your AI API key to enable the training agent. Keys are encrypted and stored

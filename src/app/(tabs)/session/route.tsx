@@ -14,6 +14,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     getRouteTrackingStatus,
@@ -79,6 +80,7 @@ export default function RouteTrackingScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const { gps } = usePlatformCapabilities();
 
   const [phase, setPhase] = useState<TrackingPhase>('idle');
@@ -294,7 +296,7 @@ export default function RouteTrackingScreen() {
   // Completed state — show route summary
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         <View style={styles.header}>
           <ThemedText type="headlineMedium" style={styles.title}>
             Route Complete 🏃

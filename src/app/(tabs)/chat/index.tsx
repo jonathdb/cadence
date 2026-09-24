@@ -10,15 +10,15 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Linking,
-    Platform,
-    Pressable,
-    StyleSheet,
-    TextInput,
-    View
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View
 } from 'react-native';
 
 
@@ -68,6 +68,7 @@ const SPOTIFY_PLAYLIST_TOOLS = new Set([
 /** Tools that are read-only retrieval and should be auto-executed without approval */
 const RETRIEVAL_TOOLS = new Set([
   'get_active_program',
+  'get_exercises',
   'get_recovery_summary',
   'get_recent_workouts_summary',
   'get_route_history',

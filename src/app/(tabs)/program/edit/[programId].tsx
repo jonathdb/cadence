@@ -33,8 +33,11 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Icon } from '@/components/ui/Icon';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
+import { confirm } from '@/lib/confirm';
 import {
     MAX_DAYS_PER_PROGRAM,
     MAX_EXERCISES_PER_DAY,
@@ -47,6 +50,7 @@ import {
     validateProgramName,
 } from '@/lib/validation';
 import { useAuth } from '@/providers/AuthProvider';
+import { archiveProgram, purgeProgram } from '@/services/program-manager';
 import { useCadenceStore, type Exercise } from '@/store/index';
 import { supabase } from '@/utils/supabase';
 
@@ -83,6 +87,7 @@ export default function ProgramEditScreen() {
   const { programId } = useLocalSearchParams<{ programId: string }>();
   const router = useRouter();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const { session } = useAuth();
   const exercises = useCadenceStore((s) => s.exercises);
 
@@ -106,6 +111,7 @@ export default function ProgramEditScreen() {
   // Day ID counter for generating unique IDs for new days
   const [dayIdCounter, setDayIdCounter] = useState(0);
   const [exerciseIdCounter, setExerciseIdCounter] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // ─── Load existing program ─────────────────────────────────────────────────
 
@@ -414,15 +420,94 @@ export default function ProgramEditScreen() {
     ]);
   }, [days.length, dayIdCounter]);
 
-  const handleRemoveDay = useCallback((dayId: string) => {
-    Alert.alert('Remove Day', 'Are you sure you want to remove this day?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => setDays((prev) => prev.filter((d) => d.id !== dayId)),
-      },
-    ]);
+  // ─── Delete (archive-first) ────────────────────────────────────────────────
+
+  const runPurge = useCallback(async () => {
+    if (!session || isNewProgram) return;
+    setIsDeleting(true);
+    try {
+      await purgeProgram(supabase, session.user.id, programId);
+      router.back();
+    } catch (err) {
+      Alert.alert(
+        'Delete failed',
+        err instanceof Error ? err.message : 'Could not delete the program. It remains unchanged.'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [session, isNewProgram, programId, router]);
+
+  const runArchive = useCallback(async () => {
+    if (!session || isNewProgram) return;
+    setIsDeleting(true);
+    try {
+      await archiveProgram(supabase, session.user.id, programId);
+      router.back();
+    } catch (err) {
+      Alert.alert(
+        'Archive failed',
+        err instanceof Error ? err.message : 'Could not archive the program. It remains unchanged.'
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [session, isNewProgram, programId, router]);
+
+  const confirmPurge = useCallback(async () => {
+    const ok = await confirm({
+      title: 'Delete permanently?',
+      message:
+        'This program and its structure will be permanently deleted. Your logged workout history is kept. This cannot be undone.',
+      confirmLabel: 'Delete permanently',
+      destructive: true,
+    });
+    if (ok) {
+      await runPurge();
+    }
+  }, [runPurge]);
+
+  const handleDeleteProgram = useCallback(async () => {
+    // Native supports a 3-way choice (Archive / Delete permanently / Cancel);
+    // web's window.confirm is boolean-only, so on web we present it as two
+    // sequential yes/no steps: first "archive?", and if declined, "delete
+    // permanently?". Archive stays the non-destructive default either way.
+    if (Platform.OS === 'web') {
+      const archiveOk = await confirm({
+        title: `Delete "${programName || 'this program'}"?`,
+        message:
+          'Click OK to ARCHIVE it (keeps the program and its history, removes it from your active list). Click Cancel to choose permanent deletion instead.',
+        confirmLabel: 'Archive',
+      });
+      if (archiveOk) {
+        await runArchive();
+      } else {
+        await confirmPurge();
+      }
+      return;
+    }
+
+    Alert.alert(
+      `Delete "${programName || 'this program'}"?`,
+      'Archiving keeps the program and its history but removes it from your active list. You can also delete it permanently.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete permanently', style: 'destructive', onPress: confirmPurge },
+        { text: 'Archive', style: 'default', onPress: runArchive },
+      ]
+    );
+  }, [programName, confirmPurge, runArchive]);
+
+  const handleRemoveDay = useCallback(async (dayId: string) => {
+    const ok = await confirm({
+      title: 'Remove Day',
+      message: 'Are you sure you want to remove this day?',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (ok) {
+      setDays((prev) => prev.filter((d) => d.id !== dayId));
+    }
   }, []);
 
   const handleMoveDayUp = useCallback((dayId: string) => {
@@ -581,13 +666,36 @@ export default function ProgramEditScreen() {
         style={styles.flex}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}
           keyboardShouldPersistTaps="handled"
         >
           {/* Header */}
-          <ThemedText type="headlineMedium">
-            {isNewProgram ? 'Create Program' : 'Edit Program'}
-          </ThemedText>
+          <View style={styles.headerRow}>
+            <ThemedText type="headlineMedium">
+              {isNewProgram ? 'Create Program' : 'Edit Program'}
+            </ThemedText>
+
+            {/* Delete affordance — archive-first confirmation (Req 3.1). Only
+                for existing programs; a new, unsaved program has nothing to
+                delete yet. */}
+            {!isNewProgram && (
+              <Pressable
+                style={[styles.deleteButton, { backgroundColor: theme.errorSoft }]}
+                onPress={handleDeleteProgram}
+                disabled={isDeleting}
+                accessibilityRole="button"
+                accessibilityLabel="Delete program"
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color={theme.error} />
+                ) : (
+                  <ThemedText style={{ fontSize: 13, fontWeight: '600', color: theme.error }}>
+                    Delete
+                  </ThemedText>
+                )}
+              </Pressable>
+            )}
+          </View>
 
           {/* Save Error Banner */}
           {saveError && (
@@ -851,13 +959,14 @@ function DayCard({
           </Pressable>
         </View>
         <Pressable
-          style={[styles.removeBtn, { backgroundColor: theme.errorSoft }]}
+          style={[styles.removeBtn, { backgroundColor: theme.errorSoft, borderColor: theme.error, borderWidth: 1 }]}
           onPress={() => onRemove(day.id)}
           accessibilityRole="button"
           accessibilityLabel={`Remove Day ${dayIndex + 1}`}
         >
-          <ThemedText style={{ color: theme.error, fontSize: 12, fontWeight: '600' }}>
-            Remove
+          <Icon name="trash" size={14} color={theme.error} />
+          <ThemedText style={{ color: theme.error, fontSize: 13, fontWeight: '700' }}>
+            Remove Day
           </ThemedText>
         </Pressable>
       </View>
@@ -1287,7 +1396,21 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.four,
     gap: Spacing.three,
-    paddingBottom: 100,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  deleteButton: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Radii.medium,
+    minHeight: 40,
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Error Banner
@@ -1378,7 +1501,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.twoHalf,
     paddingVertical: Spacing.one,
     borderRadius: Radii.medium,
-    minHeight: 32,
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
     justifyContent: 'center',
   },
 

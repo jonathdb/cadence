@@ -10,7 +10,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AIPlanCard } from '@/components/AIPlanCard';
 import { ThemedText } from '@/components/themed-text';
@@ -19,9 +18,10 @@ import { Badge } from '@/components/ui/Badge';
 import { DestructiveButton } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAiTierStore } from '@/store/ai-tier';
@@ -82,7 +82,7 @@ export default function SettingsIndexScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const dockClearance = useTabBarClearance();
   const { settings, updateSetting } = useUserSettings();
   const capabilities = usePlatformCapabilities();
   const fetchTierInfo = useAiTierStore((s) => s.fetchTierInfo);
@@ -132,7 +132,7 @@ export default function SettingsIndexScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: TabBarClearance + insets.bottom },
+          { paddingBottom: dockClearance },
         ]}
       >
         {/* Account */}

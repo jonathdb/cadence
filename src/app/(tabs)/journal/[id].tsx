@@ -26,6 +26,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { Database } from '@/types/database.generated';
 
 type JournalEntry = Database['public']['Tables']['journal_entries']['Row'];
@@ -35,6 +36,7 @@ export default function JournalDetailScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
 
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [content, setContent] = useState('');
@@ -186,7 +188,7 @@ export default function JournalDetailScreen() {
       >
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}
           keyboardShouldPersistTaps="handled"
         >
           {/* Header */}

@@ -24,6 +24,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import { getAuditLog, type AuditLogEntryRow } from '@/services/audit-log';
 import type { ActionOutcome, ApprovalStatus } from '@/types/permissions';
@@ -141,6 +142,7 @@ function AuditLogItem({ entry }: { entry: AuditLogEntryRow }) {
 
 export default function AuditLogScreen() {
   const { session } = useAuth();
+  const dockClearance = useTabBarClearance();
   const [entries, setEntries] = useState<AuditLogEntryRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -210,7 +212,7 @@ export default function AuditLogScreen() {
         data={entries}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <AuditLogItem entry={item} />}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: dockClearance }]}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }

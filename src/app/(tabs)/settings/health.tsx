@@ -15,6 +15,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlatformCapabilities } from '@/hooks/usePlatformCapabilities';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useAuth } from '@/providers/AuthProvider';
 import {
     getHealthConnectionStatus,
@@ -29,6 +30,7 @@ import {
 export default function HealthScreen() {
   const { session } = useAuth();
   const theme = useTheme();
+  const dockClearance = useTabBarClearance();
   const { health } = usePlatformCapabilities();
 
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -118,7 +120,7 @@ export default function HealthScreen() {
   if (available === false) {
     return (
       <ThemedView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
           <View style={styles.section}>
             <ThemedText type="small" themeColor="textSecondary">
               Health data integration is not available on this device. Cadence works fully without
@@ -132,7 +134,7 @@ export default function HealthScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: dockClearance }]}>
         <View style={styles.section}>
           <ThemedText type="small" themeColor="textSecondary">
             Connect to {provider === 'apple_healthkit' ? 'Apple HealthKit' : 'Health Connect'} to

@@ -16,15 +16,15 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Badge } from '@/components/ui/Badge';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Icon } from '@/components/ui/Icon';
-import { Radii, Spacing, TabBarClearance } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 import { useCadenceStore, type Session } from '@/store';
 import { supabase } from '@/utils/supabase';
 
@@ -89,7 +89,7 @@ interface ProgramDayListItem {
 export default function SessionIndexScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const dockClearance = useTabBarClearance();
 
   // Store data
   const activeSession = useCadenceStore((s) => s.activeSession);
@@ -248,7 +248,7 @@ export default function SessionIndexScreen() {
         renderItem={renderSessionItem}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: TabBarClearance + insets.bottom },
+          { paddingBottom: dockClearance },
         ]}
         ListHeaderComponent={
           <View style={styles.headerStack}>
